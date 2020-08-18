@@ -13,8 +13,9 @@
  * limitations under the License.
  */
 
+  //domain: 'proxy',
 export default {
-  domain: 'proxy',
+  domain: 'localhost',
   token: 'god-proxy',
   timeout: 5 * 60 * 1000, // 30 seconds
   slackposturl: 'https://example.com', // use a real slack webhook URL
