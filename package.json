@@ -1,6 +1,6 @@
 {
   "name": "trellis-notifications",
-  "version": "0.0.1",
+  "version": "0.0.3",
   "description": "A Trellis microservice to handle notifications based on document type",
   "main": "index.mjs",
   "type": "module",
@@ -15,14 +15,17 @@
   "dependencies": {
     "@oada/client": "^1.0.4",
     "@oada/jobs": "^1.0.4",
+    "@oada/list-lib": "^1.0.1",
     "@trellisfw/signatures": "^2.1.3",
     "bluebird": "^3.7.2",
     "debug": "^4.1.1",
     "email-addresses": "^3.1.0",
-    "flat": "^5.0.0",
-    "json-pointer": "^0.6.0",
+    "esm": "^3.2.25",
+    "flat": "^5.0.1",
+    "jsonpointer": "^4.1.0",
     "lodash": "^4.17.15",
     "nconf": "^0.10.0",
+    "simple-hashtable": "^1.0.0",
     "uuid": "^8.0.0"
   },
   "devDependencies": {
