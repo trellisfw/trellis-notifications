@@ -55,59 +55,57 @@ Promise.each(doctypes, async doctype => {
 });
 
 async function newJob (job, { jobId, log, oada }) {
-  trace('Linking job under src/_meta until oada-jobs can do that natively')
+  /*
+	trace('Linking job under src/_meta until oada-jobs can do that natively')
+	
   await oada.put({
     path: `${job.config.src}/_meta/services/trellis-notifications/jobs`,
     data: {
       [jobId]: { _ref: `resources/${jobId}` }
     }
   })
+	*/
 
   // Find the net destination path, taking into consideration chroot
-  const _destination    = job.config.dest;
-	const _docendpoint    = job.config.docendpoint;
-	const _emailsendpoint = job.config.emailsendpoint;
+	const _userEndpoint   = job.config.userEndpoint;
+	const _emailsEndpoint = job.config.emailsEndpoint;
 	const _doctype        = job.config.doctype;
-  let _destinationPath  = destination;
-  let _chroot = '';
-	let _endpointToWatch = ''; 
-	let _emailsToNotify = '';
-  if (job.config.chroot) {
-    _chroot = job.config.chroot;
-    _chroot = _chroot.replace(/\/$/, '');
-    if (chroot.match(/\/bookmarks$/)) {
-      trace(
-        'chroot exists and ends in bookmarks, getting rid of bookmarks part'
-      )
-      _chroot = chroot.replace(/\/bookmarks$/, '');
-    }
-    _destinationPath = `${_chroot}${_destinationPath}`;
-		_endpointToWatch = _destinationPath + '/' + docendpoint;
-		_emailsToNotify = _endpointToWatch + _emailsendpoint;
-    trace('Final destinationPath = ', _destinationPath);
-  }
+	let _destinationPath  = job.config.chroot;
+	let _tnUserEndpoint   = ""; 
+	let _emailsToNotify   = "";
+	_tnUserEndpoint  = _destinationPath + '/' + _userEndpoint;
+	_emailsToNotify  = _tnUserEndpoint + "/" + _emailsEndpoint;
+	trace('Final destinationPath = ', _destinationPath);
+
+	
   const _emails = await oada
 		.get( { path: _emailsToNotify })
 		.then( r => r.data )
 	  .catch( e => {
-			if ( !e || e.status !== 404) {
-        throw new 
-					 Error("Failed to retrieve emails to notify, non-404 error status returned")
+			if ( !e ) {
+        throw new Error("Failed to retrieve emails to notify");
 			}//if
 			return 0;
 		});
-  const tree = job.config.tree;
+  //const tree = job.config.tree;
 	
 	//TODO
 	//notify according to rules/config
-  await notifyUser( {oada, _endpointToWatch, _doctype, _emails} );
-
-  return job.config; 
+  await notifyUser( {oada, _tnUserEndpoint, _doctype, _emails} );
+	
+	let _config = { 
+		result: "success with async function",
+		destinationPath: _destinationPath,
+		tnUserEndpoint: _tnUserEndpoint,
+		emailsToNotify: _emailsToNotify
+	};
+  return _config; 
+	//return job.config;
 }
 
 
 async function notifyUser( {oada, _endpointToWatch, _doctype, _emails} ) {
-
+  trace('--> Notify User ', _doctype);
 }
 
 async function createEmailJobs( {oada, job} ) {
