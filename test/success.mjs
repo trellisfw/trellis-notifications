@@ -375,6 +375,9 @@ describe('success job', () => {
 						'servio@palacios.com': {
 						  frequency: Frequency.LIVEFEED
 						}
+					},
+					user: {
+            id: "USERID"
 					}
 					//tree: tree
           //pdf: { _id: `resources/${items.pdf.key}` } 

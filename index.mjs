@@ -73,11 +73,11 @@ async function newJob (job, { jobId, log, oada }) {
 	let _destinationPath  = job.config.chroot;
 	let _tnUserEndpoint   = ""; 
 	let _emailsToNotify   = "";
-	_tnUserEndpoint  = _destinationPath + '/' + _userEndpoint;
-	_emailsToNotify  = _tnUserEndpoint + "/" + _emailsEndpoint;
+	let _prefix           = "/bookmarks/trellisfw/";
+	_tnUserEndpoint       = _prefix + _destinationPath + '/' + _userEndpoint;
+	_emailsToNotify       = _prefix + _destinationPath + "/" + _emailsEndpoint;
 	trace('Final destinationPath = ', _destinationPath);
 
-	
   const _emails = await oada
 		.get( { path: _emailsToNotify })
 		.then( r => r.data )
@@ -91,21 +91,103 @@ async function newJob (job, { jobId, log, oada }) {
 	
 	//TODO
 	//notify according to rules/config
-  await notifyUser( {oada, _tnUserEndpoint, _doctype, _emails} );
+  let _config = await notifyUser( {oada, _tnUserEndpoint, _emailsToNotify,
+		                               _emails, job} );
 	
-	let _config = { 
-		result: "success with async function",
-		destinationPath: _destinationPath,
-		tnUserEndpoint: _tnUserEndpoint,
-		emailsToNotify: _emailsToNotify
-	};
   return _config; 
 	//return job.config;
 }
 
+/**
+ * notifyUser: notifies user according to rules
+*/
+async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job} ) {
+  trace('--> Notify User ', job.config.doctype);
 
-async function notifyUser( {oada, _endpointToWatch, _doctype, _emails} ) {
-  trace('--> Notify User ', _doctype);
+	let _tradingPartnerId = job.config.chroot.replace(/^.*trading-partners\/([^\/]+)(\/.*)$/, '$1');
+
+	const _docType = job.config.doctype;
+	const _userToken = uuidv4().replace(/-/g, '');
+
+	const _data = {
+    clientId:   "SERVICE-CLIENT-TRELLIS-NOTIFICATIONS",
+		user:       { _id: job.config.user.id },
+		token:      _userToken,
+		scope:      ["all:all"],
+		createTime: Date.now(),
+		expiresIn:  90 * 24 * 3600 * 1000
+	};
+
+	/*const _auth = await oada.
+		post({
+      path:    "/authorizations",
+			data:    _data,
+			headers: { "content-type": "application/vnd.oada.authorization.1+json" }
+		})
+	  .then( r => r.data )
+	  .catch(e => {
+			info('FAILED to post to /authorizations user ', job.config.user.id,', error ', e)
+      throw e
+    });
+*/
+  let _to =  "servio@palacios.com"; 
+	/*addrs.parseAddressList(_emails).map(( {name, address} ) => 
+								     ({
+								        name:  name || undefined,
+								        email: address
+							       }));*/
+
+	let _subject = "New FSQA Audit Available";
+  let _resourceData = {
+						service: "abalonemail",
+						type: "email",
+						config: {
+							multiple: false,
+							to: _to,
+							from: "info@dev.trellis.one",
+							subject: `[Trellis Notification] - [${_subject}]`,
+							templateData: {
+								recipients: _emails,
+								link: "link"
+							},
+							html: template.html,
+							attachments: template.attachments
+						}
+					};
+	
+  const jobkey = await oada
+	      .post({
+					path: "/resources",
+					data: _resourceData	
+				})
+	      .then( r => r.headers["content-location"].replace(/^\/resources\//, '') )
+	      .catch( e => {
+			     if ( !e ) {
+             throw new Error("Failed to create resource");
+			     }//if
+			     return 0;
+		     });
+
+	// Link into abalonemail queue
+  await oada.put({
+    path: `/bookmarks/services/abalonemail/jobs`,
+    data: { [jobkey]: { _id: `resources/${jobkey}` } },
+    tree
+  });
+	
+	let _config = { 
+		result: "success",
+		destinationPath:  _tnUserEndpoint,
+		tnUserEndpoint:   _tnUserEndpoint,
+		emailsToNotify:   _emailsToNotify,
+		emails:           _emails,
+		tradingPartnerId: _tradingPartnerId,
+		data:             _data,
+		jobkey:           jobkey,
+		resourceData:     _resourceData
+	};
+
+	return _config;
 }
 
 async function createEmailJobs( {oada, job} ) {
