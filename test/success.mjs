@@ -6,6 +6,7 @@ import Promise        from "bluebird";
 import moment         from "moment";
 import debug          from "debug";
 import jp             from "jsonpointer";
+import emailParser    from "email-addresses";
 
 const trace = debug('trellis-notifications#test:trace');
 const info  = debug('trellis-notifications#test:info');
@@ -81,10 +82,13 @@ const jobtemplate = {
   },
 };
 
-let _emails = [];
+/*let _emails = [];
 _emails.push("servio@palacios.com");
 _emails.push("serviopalacios@gmail.com");
 _emails.push("servio@qlever.io");
+*/
+
+let _emails = "servio@palacios.com,serviopalacios@gmail.com,servio@qlever.io";
 
 const items = {
   coijob:   _.cloneDeep(jobtemplate),
@@ -367,10 +371,10 @@ describe('success job', () => {
         type: `${doctype}-changed`,
         config: {
 					notificationType: 'email',
-          doctype: doctype,
-					chroot: `trading-partners/TEST-TRELLISNOTIFICATIONS-TP`,
-					userEndpoint: `user/bookmarks/trellisfw`,
-					emailsEndpoint: `fsqa-emails`,
+          doctype:          doctype,
+					chroot:           `trading-partners/TEST-TRELLISNOTIFICATIONS-TP`,
+					userEndpoint:     `user/bookmarks/trellisfw`,
+					emailsEndpoint:   `fsqa-emails`,
 					rules: {
 						'servio@palacios.com': {
 						  frequency: Frequency.LIVEFEED
@@ -379,7 +383,6 @@ describe('success job', () => {
 					user: {
             id: "USERID"
 					}
-					//tree: tree
           //pdf: { _id: `resources/${items.pdf.key}` } 
         },
       });
@@ -426,6 +429,7 @@ describe('success job', () => {
 			const _job_success = "jobs-success/day-index/" +  moment().format('YYYY-MM-DD') + 
 				                   "/TEST-TRELLISNOTIFICATIONS-";
 			const _tn_path = "/bookmarks/trellisfw/trading-partners/TEST-TRELLISNOTIFICATIONS-TP";
+
 			
 			it("should have set emails in the users tree", async () => {
         const result = await con.get( { path: _tn_path } ).then( r => r.data );
@@ -434,8 +438,14 @@ describe('success job', () => {
   
 			it("should have exactly three emails in the object", async () => {
         const result = await con.get( { path: _tn_path } ).then( r => r.data );
-				expect(result["fsqa-emails"]).to.be.an("array");
-				expect(result["fsqa-emails"]).to.have.length(3);
+
+				expect(result["fsqa-emails"]).to.be.an("string");
+			  let _to = emailParser.parseAddressList(result["fsqa-emails"]).map(( {name, address} ) =>
+                     ({
+                        name:  name || undefined,
+                        email: address
+                     }));
+				expect(_to).to.have.length(3);
 			});
 			
 			const _tn_cert_path = _tn_jobs + _job_success + "CERTJOB";

@@ -7,7 +7,7 @@ import tree             from "./tree.js";
 import jsonpointer      from "jsonpointer";
 import template         from "./email_templates/index.js";
 import { v4 as uuidv4 } from "uuid";
-import addrs            from "email-addresses";
+import emailParser            from "email-addresses";
 import config           from "./config.js";
 import HashTable        from "simple-hashtable";
 const { Service } = Jobs 
@@ -87,15 +87,12 @@ async function newJob (job, { jobId, log, oada }) {
 			}//if
 			return 0;
 		});
-  //const tree = job.config.tree;
 	
-	//TODO
 	//notify according to rules/config
   let _config = await notifyUser( {oada, _tnUserEndpoint, _emailsToNotify,
 		                               _emails, job} );
 	
   return _config; 
-	//return job.config;
 }
 
 /**
@@ -117,27 +114,46 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 		createTime: Date.now(),
 		expiresIn:  90 * 24 * 3600 * 1000
 	};
-
-	/*const _auth = await oada.
-		post({
-      path:    "/authorizations",
-			data:    _data,
-			headers: { "content-type": "application/vnd.oada.authorization.1+json" }
-		})
-	  .then( r => r.data )
-	  .catch(e => {
-			info('FAILED to post to /authorizations user ', job.config.user.id,', error ', e)
-      throw e
-    });
+/*
+ * FIXME: need to retrieve token
+	const _auth = await oada.
+			post({
+				path:    "/authorizations",
+				data:    _data,
+				headers: { "content-type": "application/vnd.oada.authorization.1+json" }
+			})
+			.then( r => r.data )
+			.catch(e => {
+				info('FAILED to post to /authorizations user ', job.config.user.id,', error ', e)
+				throw e
+			});
 */
-  let _to =  "servio@palacios.com"; 
-	/*addrs.parseAddressList(_emails).map(( {name, address} ) => 
+
+	let _to = emailParser.parseAddressList(_emails).map(( {name, address} ) => 
 								     ({
 								        name:  name || undefined,
 								        email: address
-							       }));*/
+							       }));
 
-	let _subject = "New FSQA Audit Available";
+	let _subject = "New FSQA audit available";
+	
+	switch (_docType) {
+		case DocType.CERT:
+         _subject = "New FSQA certificate available";
+			   break;
+		case DocType.COI:
+			   _subject = "New certificate of insurance available";
+			   break;
+		case DocType.LOG:
+			   _subject = "New letter of guarantee available";
+			   break;
+		case DocType.AUDIT:
+			   _subject = "New FSQA audit available";
+			   break;
+		default: 
+			throw new Error("Document type not recognized");
+	}//switch
+
   let _resourceData = {
 						service: "abalonemail",
 						type: "email",
@@ -187,6 +203,8 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 		resourceData:     _resourceData
 	};
 
+	//let _config = { authorization: _authorizationData, docType: _docType, auth: _auth };
+
 	return _config;
 }
 
@@ -194,25 +212,4 @@ async function createEmailJobs( {oada, job} ) {
 
 }
 
-/*
-async watchForDocChanges( {oada, path, doctype, emails, config} ) {
-
-	const watch = new ListWatch({
-    path: path,
-		name: 'Alice',
-		conn: oada,
-		resume: true,
-		onAddItem(item, id) {console.log("New " + doctype + " id " + id + " item " + item)},
-		onRemoveItem(id) { console.log(`${doctype} ${id} removed`)}
-	});
-
-	await watch.stop();
-
-	//TODO
-	//need to include abalonemail jobs
-  if (!config.skipCreatingEmailJobs) {
-    await createEmailJobs({ oada, job });
-  }
-}
-*/
 service.start().catch(e => console.error('Service threw uncaught error: ', e))
