@@ -82,12 +82,6 @@ const jobtemplate = {
   },
 };
 
-/*let _emails = [];
-_emails.push("servio@palacios.com");
-_emails.push("serviopalacios@gmail.com");
-_emails.push("servio@qlever.io");
-*/
-
 let _emails = "servio@palacios.com,serviopalacios@gmail.com,servio@qlever.io";
 
 const items = {
@@ -326,10 +320,6 @@ async function putAndLinkData(key_or_keys, merges) {
   await putLink(key_or_keys);
 }
 
-function setConnection(theconnection) {
-  con = theconnection;
-}
-
 chai.use(chaiAsPromised);
 const expect = chai.expect;
 
@@ -346,7 +336,6 @@ describe('success job', () => {
   before(async function() {
     this.timeout(20000);
     con = await oada.connect({ domain, token });
-    setConnection(con);
 
     trace('before: cleanup');
     await cleanup();
@@ -378,6 +367,12 @@ describe('success job', () => {
 					rules: {
 						'servio@palacios.com': {
 						  frequency: Frequency.LIVEFEED
+						},
+						'serviopalacios@gmail.com': {
+						  frequency: Frequency.LIVEFEED
+						},
+						'servio@qlever.io': {
+						  frequency: Frequency.DAILY
 						}
 					},
 					user: {

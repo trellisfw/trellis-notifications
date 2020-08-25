@@ -7,9 +7,10 @@ import tree             from "./tree.js";
 import jsonpointer      from "jsonpointer";
 import template         from "./email_templates/index.js";
 import { v4 as uuidv4 } from "uuid";
-import emailParser            from "email-addresses";
+import emailParser      from "email-addresses";
 import config           from "./config.js";
 import HashTable        from "simple-hashtable";
+import moment           from "moment";
 const { Service } = Jobs 
 
 const error = debug('trellis-notifications:error');
@@ -46,6 +47,13 @@ const DocType = {
 
 Object.freeze(DocType);
 
+const Frequency = {
+  DAILY: "daily",
+  LIVEFEED: "live-feed"
+};
+
+Object.freeze(Frequency);
+
 const doctypes = [ DocType.AUDIT, DocType.CERT, DocType.COI, DocType.LOG ];
 
 // 5 min timeout
@@ -53,6 +61,9 @@ Promise.each(doctypes, async doctype => {
 	trace("creating jobs for document type ", doctype);
   service.on(`${doctype}-changed`, config.get('timeout'), newJob);
 });
+
+let notifications = {};
+let dailyNotifications = [];
 
 async function newJob (job, { jobId, log, oada }) {
   /*
@@ -135,6 +146,22 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 								        email: address
 							       }));
 
+	let _rules_template = {
+    id:        "",
+		type:      "email",
+		frequency: ""
+	};
+
+	if (_to) {
+		_to.forEach( function(item) {
+			_rules_template.id               = item.email;
+			_rules_template.frequency        = job.config.rules[item.email].frequency;
+      notifications[item.email]        = {};
+			notifications[item.email].config = {};
+			notifications[item.email].config = _rules_template;
+		});
+	}
+
 	let _subject = "New FSQA audit available";
 	
 	switch (_docType) {
@@ -190,6 +217,13 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
     data: { [jobkey]: { _id: `resources/${jobkey}` } },
     tree
   });
+
+	let _date = moment().format('YYYY-MM-DD');
+	// Link into notifications index
+  await oada.put({
+    path: `/bookmarks/services/trellis-notifications/notifications/day-index/${_date}`,
+    data: { "servio@palacios.com": { count: 1 }  }
+  });
 	
 	let _config = { 
 		result: "success",
@@ -200,10 +234,9 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 		tradingPartnerId: _tradingPartnerId,
 		data:             _data,
 		jobkey:           jobkey,
-		resourceData:     _resourceData
+		resourceData:     _resourceData,
+		notifications:    notifications
 	};
-
-	//let _config = { authorization: _authorizationData, docType: _docType, auth: _auth };
 
 	return _config;
 }
