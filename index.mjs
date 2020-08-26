@@ -11,15 +11,18 @@ import emailParser      from "email-addresses";
 import config           from "./config.js";
 import HashTable        from "simple-hashtable";
 import moment           from "moment";
-const { Service } = Jobs 
+import Worker           from "@oada/rules-worker";
+const { RulesWorker } = Worker;
+const { Service }     = Jobs; 
+const TN = "trellis-notifications";
 
-const error = debug('trellis-notifications:error');
-const warn  = debug('trellis-notifications:warn');
-const info  = debug('trellis-notifications:info');
-const trace = debug('trellis-notifications:trace');
+const error = debug(`${TN}:error`);
+const warn  = debug(`${TN}:warn`);
+const info  = debug(`${TN}:info`);
+const trace = debug(`${TN}:trace`);
 
 const TOKEN = config.get('token');
-let DOMAIN = config.get('domain') || '';
+let DOMAIN  = config.get('domain') || '';
 if (DOMAIN.match(/^http/)) DOMAIN = DOMAIN.replace(/^https:\/\//, '')
 
 if (DOMAIN === 'localhost' || DOMAIN === 'proxy') {
@@ -28,7 +31,7 @@ if (DOMAIN === 'localhost' || DOMAIN === 'proxy') {
 
 const SKIN = config.get('skin') || 'default';
 
-const service = new Service('trellis-notifications', DOMAIN, TOKEN, 1, {
+const service = new Service(TN, DOMAIN, TOKEN, 1, {
   finishReporters: [
     {
       type: 'slack',
@@ -70,7 +73,7 @@ async function newJob (job, { jobId, log, oada }) {
 	trace('Linking job under src/_meta until oada-jobs can do that natively')
 	
   await oada.put({
-    path: `${job.config.src}/_meta/services/trellis-notifications/jobs`,
+    path: `${job.config.src}/_meta/services/${TN}/jobs`,
     data: {
       [jobId]: { _ref: `resources/${jobId}` }
     }
@@ -221,7 +224,7 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 	let _date = moment().format('YYYY-MM-DD');
 	// Link into notifications index
   await oada.put({
-    path: `/bookmarks/services/trellis-notifications/notifications/day-index/${_date}`,
+    path: `/bookmarks/services/${TN}/notifications/day-index/${_date}`,
     data: { "servio@palacios.com": { count: 1 }  }
   });
 	
@@ -241,8 +244,27 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 	return _config;
 }
 
-async function createEmailJobs( {oada, job} ) {
-
-}
-
 service.start().catch(e => console.error('Service threw uncaught error: ', e))
+
+/*
+ *TODO: define a set of actions related to trellis-notifications
+ *
+ */
+const _TN = "trellis-notifications";
+new RulesWorker({
+  _TN,
+  conn: service.getClient(DOMAIN).clone(TOKEN),
+  actions: [{
+    name:        "notify-fsqa-emails",
+    service:     _TN,
+    type:        "application/json",
+    description: "send a notification",
+    async callback(item) {
+			conn = service.getClient(DOMAIN).clone(TOKEN);
+			await conn.put({
+				path: `/bookmarks/services/${_TN}/rules/notify`,
+				data: { "servio@palacios.com": { count: 1 }  }
+			});
+    }
+  }]
+});
