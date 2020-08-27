@@ -364,24 +364,24 @@ describe('success job', () => {
 					chroot:           `trading-partners/TEST-TRELLISNOTIFICATIONS-TP`,
 					userEndpoint:     `user/bookmarks/trellisfw`,
 					emailsEndpoint:   `fsqa-emails`,
-					rules: {
-						'servio@palacios.com': {
-						  frequency: Frequency.LIVEFEED
-						},
-						'serviopalacios@gmail.com': {
-						  frequency: Frequency.LIVEFEED
-						},
-						'servio@qlever.io': {
-						  frequency: Frequency.DAILY
-						}
-					},
 					user: {
             id: "USERID"
 					}
-          //pdf: { _id: `resources/${items.pdf.key}` } 
-        },
+        }
       });
-      
+
+			let _emails_config = {
+						'servio@palacios.com': {
+							frequency: Frequency.LIVEFEED
+						},
+						'serviopalacios@gmail.com': {
+							frequency: Frequency.LIVEFEED
+						},
+						'servio@qlever.io': {
+							frequency: Frequency.DAILY
+						}
+			};
+
 			if (REALISTIC_TIMING) await Promise.delay(50);
 
       // Create the JSON resource
@@ -391,14 +391,18 @@ describe('success job', () => {
       // Add the identified "lookup" to it's meta:
       let meta;
       switch(doctype) {
-        case DocType.AUDIT: meta = { organization: { _ref: `resources/${items.fac.key}` } };
-        break;
-        case DocType.CERT: meta = { organization: { _ref: `resources/${items.fac.key}` } };
-        break;
-        case DocType.COI: meta = { holder: { _ref: `resources/${items.coiholder.key}` } };
-        break;
-        case DocType.LOG: meta = { buyer: { _ref: `resources/${items.logbuyer.key}` } };
-        break;
+        case DocType.AUDIT: 
+					meta = { organization: { _ref: `resources/${items.fac.key}` } };
+          break;
+        case DocType.CERT: 
+					meta = { organization: { _ref: `resources/${items.fac.key}` } };
+          break;
+        case DocType.COI: 
+					meta = { holder: { _ref: `resources/${items.coiholder.key}` } };
+          break;
+        case DocType.LOG: 
+					meta = { buyer: { _ref: `resources/${items.logbuyer.key}` } };
+          break;
       }
       await con.put({ path: `/resources/${i.key}/_meta/lookups/${i.name.singular}`, data: meta });
 
@@ -423,16 +427,16 @@ describe('success job', () => {
 			const _tn_jobs = "/bookmarks/services/trellis-notifications/";
 			const _job_success = "jobs-success/day-index/" +  moment().format('YYYY-MM-DD') + 
 				                   "/TEST-TRELLISNOTIFICATIONS-";
-			const _tn_path = "/bookmarks/trellisfw/trading-partners/TEST-TRELLISNOTIFICATIONS-TP";
+			const _tp_tn_path = "/bookmarks/trellisfw/trading-partners/TEST-TRELLISNOTIFICATIONS-TP";
 
 			
 			it("should have set emails in the users tree", async () => {
-        const result = await con.get( { path: _tn_path } ).then( r => r.data );
+        const result = await con.get( { path: _tp_tn_path } ).then( r => r.data );
 				expect(result).to.have.property("fsqa-emails");
 			});
   
 			it("should have exactly three emails in the object", async () => {
-        const result = await con.get( { path: _tn_path } ).then( r => r.data );
+        const result = await con.get( { path: _tp_tn_path } ).then( r => r.data );
 
 				expect(result["fsqa-emails"]).to.be.an("string");
 			  let _to = emailParser.parseAddressList(result["fsqa-emails"]).map(( {name, address} ) =>
@@ -442,57 +446,43 @@ describe('success job', () => {
                      }));
 				expect(_to).to.have.length(3);
 			});
-			
-			const _tn_cert_path = _tn_jobs + _job_success + "CERTJOB";
-			it("should include a CERTJOB", async () => {
-        const result = await con.get( { path: _tn_cert_path } ).then( r => r.data );
+		
+			const _jobKeys = ["doctype", "chroot", "userEndpoint", "emailsEndpoint", 
+				                "notificationType", "user"];
+      let _tn_path = "";
+			let _itMessage = "should include a "; 
+
+			switch (doctype) {
+        case DocType.CERT: 
+            _itMessage += " CERTJOB";
+				    _tn_path = _tn_jobs + _job_success + "CERTJOB";
+				    break;
+ 
+        case DocType.AUDIT: 
+            _itMessage += " AUDITJOB";
+				    _tn_path = _tn_jobs + _job_success + "AUDITJOB";
+				    break;
+        
+				case DocType.COI: 
+            _itMessage += " COIJOB";
+				    _tn_path = _tn_jobs + _job_success + "COIJOB";
+				    break;
+				
+				case DocType.LOG: 
+            _itMessage += " LOGJOB";
+				    _tn_path = _tn_jobs + _job_success + "LOGJOB";
+				    break;
+        
+				default:
+				  throw new Error("Document type not recognized");
+			}
+
+			it(`${_itMessage}`, async () => {
+        const result = await con.get( { path: _tn_path } ).then( r => r.data );
 				expect(result).to.have.property("type");
 				expect(result).to.have.property("config");
-				expect(result.config).to.have.property("doctype");
-				expect(result.config).to.have.property("chroot");
-				expect(result.config).to.have.property("userEndpoint");
-				expect(result.config).to.have.property("emailsEndpoint");
-				expect(result.config).to.have.property("rules");
-				expect(result.config).to.have.property("notificationType");
-			});
-			
-			const _tn_audit_path = _tn_jobs + _job_success + "AUDITJOB";
-			it("should include an AUDITJOB", async () => {
-        const result = await con.get( { path: _tn_audit_path } ).then( r => r.data );
-				expect(result).to.have.property("type");
-				expect(result).to.have.property("config");
-				expect(result.config).to.have.property("doctype");
-				expect(result.config).to.have.property("chroot");
-				expect(result.config).to.have.property("userEndpoint");
-				expect(result.config).to.have.property("emailsEndpoint");
-				expect(result.config).to.have.property("rules");
-				expect(result.config).to.have.property("notificationType");
-			});
-			
-			const _tn_coi_path = _tn_jobs + _job_success + "COIJOB";
-			it("should include a COIJOB", async () => {
-        const result = await con.get( { path: _tn_coi_path } ).then( r => r.data );
-				expect(result).to.have.property("type");
-				expect(result).to.have.property("config");
-				expect(result.config).to.have.property("doctype");
-				expect(result.config).to.have.property("chroot");
-				expect(result.config).to.have.property("userEndpoint");
-				expect(result.config).to.have.property("emailsEndpoint");
-				expect(result.config).to.have.property("rules");
-				expect(result.config).to.have.property("notificationType");
-			});
-			
-			const _tn_log_path = _tn_jobs + _job_success + "LOGJOB";
-			it("should include a LOGJOB", async () => {
-        const result = await con.get( { path: _tn_log_path } ).then( r => r.data );
-				expect(result).to.have.property("type");
-				expect(result).to.have.property("config");
-				expect(result.config).to.have.property("doctype");
-				expect(result.config).to.have.property("chroot");
-				expect(result.config).to.have.property("userEndpoint");
-				expect(result.config).to.have.property("emailsEndpoint");
-				expect(result.config).to.have.property("rules");
-				expect(result.config).to.have.property("notificationType");
+				expect(result.config).to.be.an("object");
+				expect(result.config).to.have.all.keys(_jobKeys);
 			});
   
     });

@@ -71,7 +71,8 @@ let dailyNotifications = [];
 async function newJob (job, { jobId, log, oada }) {
   /*
 	trace('Linking job under src/_meta until oada-jobs can do that natively')
-	
+  //debugging
+//
   await oada.put({
     path: `${job.config.src}/_meta/services/${TN}/jobs`,
     data: {
@@ -81,10 +82,11 @@ async function newJob (job, { jobId, log, oada }) {
 	*/
 
   // Find the net destination path, taking into consideration chroot
-	const _userEndpoint   = job.config.userEndpoint;
-	const _emailsEndpoint = job.config.emailsEndpoint;
-	const _doctype        = job.config.doctype;
-	let _destinationPath  = job.config.chroot;
+	const c               = job.config;
+	const _userEndpoint   = c.userEndpoint;
+	const _emailsEndpoint = c.emailsEndpoint;
+	const _doctype        = c.doctype;
+	let _destinationPath  = c.chroot;
 	let _tnUserEndpoint   = ""; 
 	let _emailsToNotify   = "";
 	let _prefix           = "/bookmarks/trellisfw/";
@@ -96,10 +98,7 @@ async function newJob (job, { jobId, log, oada }) {
 		.get( { path: _emailsToNotify })
 		.then( r => r.data )
 	  .catch( e => {
-			if ( !e ) {
-        throw new Error("Failed to retrieve emails to notify");
-			}//if
-			return 0;
+        throw new Error("Failed to retrieve emails to notify, error " + e);
 		});
 	
 	//notify according to rules/config
@@ -107,6 +106,30 @@ async function newJob (job, { jobId, log, oada }) {
 		                               _emails, job} );
 	
   return _config; 
+}
+
+function getSubject(docType) {
+
+	let _subject = "New FSQA audit available";
+	
+	switch (docType) {
+		case DocType.CERT:
+         _subject = "New FSQA certificate available";
+			   break;
+		case DocType.COI:
+			   _subject = "New certificate of insurance available";
+			   break;
+		case DocType.LOG:
+			   _subject = "New letter of guarantee available";
+			   break;
+		case DocType.AUDIT:
+			   _subject = "New FSQA audit available";
+			   break;
+		default: 
+			throw new Error("Document type not recognized");
+	}//switch
+
+	return _subject;
 }
 
 /**
@@ -128,8 +151,7 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 		createTime: Date.now(),
 		expiresIn:  90 * 24 * 3600 * 1000
 	};
-/*
- * FIXME: need to retrieve token
+	
 	const _auth = await oada.
 			post({
 				path:    "/authorizations",
@@ -138,10 +160,9 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 			})
 			.then( r => r.data )
 			.catch(e => {
-				info('FAILED to post to /authorizations user ', job.config.user.id,', error ', e)
-				throw e
+				info('FAILED to post to /authorizations user ', job.config.user.id,', error ', e);
+				throw e;
 			});
-*/
 
 	let _to = emailParser.parseAddressList(_emails).map(( {name, address} ) => 
 								     ({
@@ -158,48 +179,32 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 	if (_to) {
 		_to.forEach( function(item) {
 			_rules_template.id               = item.email;
-			_rules_template.frequency        = job.config.rules[item.email].frequency;
+			_rules_template.frequency        = "live-feed";//job.config.rules[item.email].frequency;
       notifications[item.email]        = {};
 			notifications[item.email].config = {};
 			notifications[item.email].config = _rules_template;
 		});
 	}
 
-	let _subject = "New FSQA audit available";
-	
-	switch (_docType) {
-		case DocType.CERT:
-         _subject = "New FSQA certificate available";
-			   break;
-		case DocType.COI:
-			   _subject = "New certificate of insurance available";
-			   break;
-		case DocType.LOG:
-			   _subject = "New letter of guarantee available";
-			   break;
-		case DocType.AUDIT:
-			   _subject = "New FSQA audit available";
-			   break;
-		default: 
-			throw new Error("Document type not recognized");
-	}//switch
+  let _subject = getSubject(_docType);
+	let _link = `https://trellisfw.github.io/conductor?d=${DOMAIN}&t=${TOKEN}&s=${SKIN}`;
 
   let _resourceData = {
-						service: "abalonemail",
-						type: "email",
-						config: {
-							multiple: false,
-							to: _to,
-							from: "info@dev.trellis.one",
-							subject: `[Trellis Notification] - [${_subject}]`,
-							templateData: {
-								recipients: _emails,
-								link: "link"
-							},
-							html: template.html,
-							attachments: template.attachments
-						}
-					};
+			service: "abalonemail",
+			type: "email",
+			config: {
+				multiple: false,
+				to: _to,
+				from: "info@dev.trellis.one",
+				subject: `[Trellis Notification] - [${_subject}]`,
+				templateData: {
+					recipients: _emails,
+					link: _link 
+				},
+				html: template.html,
+				attachments: template.attachments
+			}
+		};
 	
   const jobkey = await oada
 	      .post({
@@ -208,10 +213,7 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 				})
 	      .then( r => r.headers["content-location"].replace(/^\/resources\//, '') )
 	      .catch( e => {
-			     if ( !e ) {
-             throw new Error("Failed to create resource");
-			     }//if
-			     return 0;
+            throw new Error("Failed to create resource, error" + e);
 		     });
 
 	// Link into abalonemail queue
@@ -229,7 +231,7 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
   });
 	
 	let _config = { 
-		result: "success",
+		result:           "success",
 		destinationPath:  _tnUserEndpoint,
 		tnUserEndpoint:   _tnUserEndpoint,
 		emailsToNotify:   _emailsToNotify,
@@ -250,21 +252,16 @@ service.start().catch(e => console.error('Service threw uncaught error: ', e))
  *TODO: define a set of actions related to trellis-notifications
  *
  */
-const _TN = "trellis-notifications";
 new RulesWorker({
-  _TN,
+	name: "trellis-notifications",
   conn: service.getClient(DOMAIN).clone(TOKEN),
-  actions: [{
-    name:        "notify-fsqa-emails",
-    service:     _TN,
-    type:        "application/json",
-    description: "send a notification",
-    async callback(item) {
-			conn = service.getClient(DOMAIN).clone(TOKEN);
-			await conn.put({
-				path: `/bookmarks/services/${_TN}/rules/notify`,
-				data: { "servio@palacios.com": { count: 1 }  }
-			});
-    }
-  }]
+  actions: [
+		{
+			name:        "notify-fsqa-emails",
+			service:     "trellis-notifications",
+			type:        "application/json",
+			description: "send a notification",
+		  notifyUser	
+		}
+  ]
 });
