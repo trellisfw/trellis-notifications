@@ -82,16 +82,17 @@ async function newJob (job, { jobId, log, oada }) {
 	*/
 
   // Find the net destination path, taking into consideration chroot
-	const c               = job.config;
-	const _userEndpoint   = c.userEndpoint;
-	const _emailsEndpoint = c.emailsEndpoint;
-	const _doctype        = c.doctype;
-	let _destinationPath  = c.chroot;
-	let _tnUserEndpoint   = ""; 
-	let _emailsToNotify   = "";
-	let _prefix           = "/bookmarks/trellisfw/";
-	_tnUserEndpoint       = _prefix + _destinationPath + '/' + _userEndpoint;
-	_emailsToNotify       = _prefix + _destinationPath + "/" + _emailsEndpoint;
+	const c                   = job.config;
+	const _userEndpoint       = c.userEndpoint;
+	const _emailsEndpoint     = c.emailsEndpoint;
+	const _doctype            = c.doctype;
+	let _destinationPath      = c.chroot;
+	let _tnUserEndpoint       = ""; 
+	let _emailsToNotify       = "";
+	let _prefix               = "/bookmarks/trellisfw/";
+	_tnUserEndpoint           = _prefix + _destinationPath + '/' + _userEndpoint;
+	_emailsToNotify           = _prefix + _destinationPath + "/" + _emailsEndpoint;
+	let _notificationsConfig  = _prefix + _destinationPath;
 	trace('Final destinationPath = ', _destinationPath);
 
   const _emails = await oada
@@ -103,7 +104,7 @@ async function newJob (job, { jobId, log, oada }) {
 	
 	//notify according to rules/config
   let _config = await notifyUser( {oada, _tnUserEndpoint, _emailsToNotify,
-		                               _emails, job} );
+		                               _notificationsConfig, _emails, job} );
 	
   return _config; 
 }
@@ -135,7 +136,8 @@ function getSubject(docType) {
 /**
  * notifyUser: notifies user according to rules
 */
-async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job} ) {
+async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _notificationsConfig,
+	                          _emails, job} ) {
   trace('--> Notify User ', job.config.doctype);
 
 	let _tradingPartnerId = job.config.chroot.replace(/^.*trading-partners\/([^\/]+)(\/.*)$/, '$1');
@@ -170,7 +172,15 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 								        email: address
 							       }));
 
-	let _rules_template = {
+  const _notificationsConfigData = await oada
+		.get( { path: _notificationsConfig })
+		.then( r => r.data )
+	  .catch( e => {
+        throw new Error("Failed to retrieve notifications config, error " + e);
+		});
+
+	let _emailsConfig = _notificationsConfigData["notifications-config"];
+	let _configTemplate = {
     id:        "",
 		type:      "email",
 		frequency: ""
@@ -178,11 +188,15 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 
 	if (_to) {
 		_to.forEach( function(item) {
-			_rules_template.id               = item.email;
-			_rules_template.frequency        = "live-feed";//job.config.rules[item.email].frequency;
+			_configTemplate.id = item.email;
+			if (_emailsConfig[item.email] && _emailsConfig[item.email].frequency) {
+			  _configTemplate.frequency = _emailsConfig[item.email].frequency;
+			} else {
+				_configTemplate.frequency = Frequency.LIVEFEED;
+			}
       notifications[item.email]        = {};
 			notifications[item.email].config = {};
-			notifications[item.email].config = _rules_template;
+			notifications[item.email].config = _configTemplate;
 		});
 	}
 
@@ -213,7 +227,7 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 				})
 	      .then( r => r.headers["content-location"].replace(/^\/resources\//, '') )
 	      .catch( e => {
-            throw new Error("Failed to create resource, error" + e);
+            throw new Error("Failed to create resource, error " + e);
 		     });
 
 	// Link into abalonemail queue
@@ -225,10 +239,11 @@ async function notifyUser( {oada, _tnUserEndpoint, _emailsToNotify, _emails, job
 
 	let _date = moment().format('YYYY-MM-DD');
 	// Link into notifications index
-  await oada.put({
+	// TODO: Use for daily configuration, to be integrated with rules-engine 
+  /*await oada.put({
     path: `/bookmarks/services/${TN}/notifications/day-index/${_date}`,
     data: { "servio@palacios.com": { count: 1 }  }
-  });
+  });*/
 	
 	let _config = { 
 		result:           "success",
@@ -252,6 +267,7 @@ service.start().catch(e => console.error('Service threw uncaught error: ', e))
  *TODO: define a set of actions related to trellis-notifications
  *
  */
+/*
 new RulesWorker({
 	name: "trellis-notifications",
   conn: service.getClient(DOMAIN).clone(TOKEN),
@@ -264,4 +280,4 @@ new RulesWorker({
 		  notifyUser	
 		}
   ]
-});
+});*/

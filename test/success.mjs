@@ -83,6 +83,17 @@ const jobtemplate = {
 };
 
 let _emails = "servio@palacios.com,serviopalacios@gmail.com,servio@qlever.io";
+let _emailsConfig = {
+			'servio@palacios.com': {
+				frequency: Frequency.LIVEFEED
+			},
+			'serviopalacios@gmail.com': {
+				frequency: Frequency.LIVEFEED
+			},
+			'servio@qlever.io': {
+				frequency: Frequency.LIVEFEED
+			}	
+};
 
 const items = {
   coijob:   _.cloneDeep(jobtemplate),
@@ -135,6 +146,7 @@ const items = {
       masterid: 'test-master-tp-1', // triggers an expand-index and masterid-index
       name: 'a test trading partner',
 			"fsqa-emails": _emails,
+			"notifications-config": _emailsConfig,
       user: {
         id: 'users/TEST-TRELLISNOTIFICATIONS-TPUSER',
         bookmarks: { _id: 'resources/TEST-TRELLISNOTIFICATIONS-TPUSERBOOKMARKS' },
@@ -370,17 +382,6 @@ describe('success job', () => {
         }
       });
 
-			let _emails_config = {
-						'servio@palacios.com': {
-							frequency: Frequency.LIVEFEED
-						},
-						'serviopalacios@gmail.com': {
-							frequency: Frequency.LIVEFEED
-						},
-						'servio@qlever.io': {
-							frequency: Frequency.DAILY
-						}
-			};
 
 			if (REALISTIC_TIMING) await Promise.delay(50);
 
@@ -415,9 +416,11 @@ describe('success job', () => {
       }});
 
     });
+	
     // Wait a bit for processing all the jobs
     if (REALISTIC_TIMING) await Promise.delay(2000);
   });
+
 
   _.each(doctypes, doctype => {
     describe('#' + doctype, () => {

@@ -2,7 +2,35 @@
 
 A microservice for notifications based on document type. A job notifies the event to a `destination`.
 
-## Installation
+## Basics
+
+The service accepts jobs with a configuration similar to the following:
+
+
+```http
+POST /bookmarks/services/trellis-notifications/jobs
+{
+ "service": "trellis-notifications",
+    "type": "audit-changed",
+    "config": {
+        "notificationType": "email",
+        "doctype": "audit",
+        "chroot": "trading-partners/TEST-TRELLISNOTIFICATIONS-TP",
+        "userEndpoint": "user/bookmarks/trellisfw",
+        "emailsEndpoint": "fsqa-emails",
+        "user": {
+            "id": "USERID"
+        }
+    }
+}
+```
+
+### Roadmap
+* Integrate rules-engine with this service.
+* Include daily digest of notifications integrated with rules.
+
+
+### Installation
 
 ```docker-compose
 cd path/to/your/oada-srvc-docker
