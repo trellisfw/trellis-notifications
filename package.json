@@ -1,6 +1,6 @@
 {
   "name": "trellis-notifications",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "description": "A Trellis microservice to handle notifications based on document type",
   "main": "index.mjs",
   "type": "module",

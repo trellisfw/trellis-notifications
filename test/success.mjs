@@ -58,7 +58,7 @@ const DocType = {
 Object.freeze(DocType);
 
 const Frequency = {
-	DAILY: "daily",
+	DAILYFEED: "daily-feed",
 	LIVEFEED: "live-feed"
 };
 
@@ -91,7 +91,7 @@ let _emailsConfig = {
 				frequency: Frequency.LIVEFEED
 			},
 			'servio@qlever.io': {
-				frequency: Frequency.LIVEFEED
+				frequency: Frequency.DAILYFEED
 			}	
 };
 
