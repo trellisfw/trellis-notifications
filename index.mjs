@@ -68,16 +68,16 @@ let notifications = {};
 let dailyNotifications = [];
 
 async function newJob(job, { jobId, log, oada }) {
-  /*
+	/*
 	trace('Linking job under src/_meta until oada-jobs can do that natively')
-  //debugging
+	//debugging
 //
-  await oada.put({
-    path: `${job.config.src}/_meta/services/${TN}/jobs`,
-    data: {
-      [jobId]: { _ref: `resources/${jobId}` }
-    }
-  })
+	await oada.put({
+		path: `${job.config.src}/_meta/services/${TN}/jobs`,
+		data: {
+			[jobId]: { _ref: `resources/${jobId}` }
+		}
+	})
 	*/
 
 	// Find the net destination path, taking into consideration chroot
@@ -221,9 +221,9 @@ async function getNotificationConfigData(oada, _notificationsConfig) {
  * @param _to 
  * @param _emails 
  */
-async function createEmailJob(oada, _docType, _to, _emails) {
+async function createEmailJob(oada, _docType, _to, _emails, _userToken) {
 	let _subject = getSubject(_docType);
-	let _link = `https://trellisfw.github.io/conductor?d=${DOMAIN}&t=${TOKEN}&s=${SKIN}`;
+	let _link = `https://trellisfw.github.io/conductor?d=${DOMAIN}&t=${_userToken}&s=${SKIN}`;
 
 	let _resourceData = {
 		service: "abalonemail",
@@ -330,8 +330,8 @@ function getLiveFeedEmails() {
  * notifyUser: notifies user according to rules
  * @param param0 
  */
-async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify, _notificationsConfig,
-	_emails, job }) {
+async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
+	_notificationsConfig, _emails, job }) {
 	trace('--> Notify User ', job.config.doctype);
 	let _tradingPartnerId = job.config.chroot.replace(/^.*trading-partners\/([^\/]+)(\/.*)$/, '$1');
 	const _docType = job.config.doctype;
@@ -342,7 +342,7 @@ async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify, _notificatio
 	populateNotifications(_to, _notificationsConfigData);
 	let _list = await insertDailyDigestQueue(oada, notifications);
 	let _livefeedEmails = getLiveFeedEmails();
-	let _jobkey = await createEmailJob(oada, _docType, _livefeedEmails, _emails);
+	let _jobkey = await createEmailJob(oada, _docType, _livefeedEmails, _emails, _userToken);
 
 	let _config = {
 		result: "success",
@@ -369,14 +369,14 @@ service.start().catch(e => console.error('Service threw uncaught error: ', e))
 /*
 new RulesWorker({
 	name: "trellis-notifications",
-  conn: service.getClient(DOMAIN).clone(TOKEN),
-  actions: [
+	conn: service.getClient(DOMAIN).clone(TOKEN),
+	actions: [
 		{
 			name:        "notify-fsqa-emails",
 			service:     "trellis-notifications",
 			type:        "application/json",
 			description: "send a notification",
-		  notifyUser
+			notifyUser
 		}
-  ]
+	]
 });*/
