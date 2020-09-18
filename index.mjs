@@ -1,19 +1,20 @@
-import { readFileSync } from "fs";
+//import { readFileSync } from "fs";
 import Promise from "bluebird";
 import _ from "lodash";
 import debug from "debug";
 import Jobs from "@oada/jobs";
 import tree from "./tree.js";
-import jsonpointer from "jsonpointer";
+//import jsonpointer from "jsonpointer";
 import template from "./email_templates/index.js";
 import { v4 as uuidv4 } from "uuid";
 import emailParser from "email-addresses";
 import config from "./config.js";
 import moment from "moment";
-import Worker from "@oada/rules-worker";
-const { RulesWorker } = Worker;
+//import Worker from "@oada/rules-worker";
+//const { RulesWorker } = Worker;
 const { Service } = Jobs;
 const TN = "trellis-notifications";
+let OADA = null;
 
 const error = debug(`${TN}:error`);
 const warn = debug(`${TN}:warn`);
@@ -58,6 +59,85 @@ Object.freeze(Frequency);
 
 const doctypes = [DocType.AUDIT, DocType.CERT, DocType.COI, DocType.LOG];
 
+let now = new Date();
+
+let msTill1700 = 60000; //new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0) - now;
+
+/*if (msTill1700 < 0) {
+	msTill1700 += 86400000;
+}*/
+
+setInterval(dailyDigest, msTill1700);
+
+/**
+ * get Daily Digest Path
+ */
+function getDailyDigestPath() {
+	let _date = moment().format('YYYY-MM-DD');
+	let _path = `/bookmarks/services/${TN}/notifications/day-index/${_date}/daily-digest-queue`;
+	return _path;
+}//end getDailyDigestPath
+
+/**
+ * get Daily Digest Queue
+ * @param oada 
+ */
+async function getDailyDigestQueue(oada) {
+	let _path = getDailyDigestPath();
+
+	//const _dailyDigestQueue = await 
+	return oada
+		.get({ path: _path })
+		.then(r => r.data)
+		.catch(e => {
+			throw new Error("Failed to get daily digest queue, error " + e);
+		});
+
+	//return _dailyDigestQueue;
+}//end getDailyDigestQueue
+
+let _counter = 0;
+/**
+ * Daily Digest Main Function
+ */
+async function dailyDigest() {
+	let _path = getDailyDigestPath();
+	let _result = {};
+	if (OADA !== null) {
+		try {
+			let _dailyDigestQueue = await getDailyDigestQueue(OADA);
+			//let _counter = 0;
+			//if (_dailyDigestQueue && _dailyDigestQueue.counter) {
+			//_counter = _dailyDigestQueue.counter + 1;
+			//}
+
+			_result = {
+				id: "servio@example.com",
+				counter: _counter++,
+				//data: _dailyDigestQueue,
+				processed: false,
+				path: _path
+			};
+		}
+		catch (error) {
+			console.log("Error when getting the daily digest queue");
+		};
+		await OADA.put({
+			path: _path,
+			data: _result
+		}).catch(e => {
+			throw new Error("Failed to put resource for daily digest " + e);
+		});
+	}//if
+}//end daily digest
+
+/**
+ * Generates a token
+ */
+function generateToken() {
+	return uuidv4().replace(/-/g, '');
+}//end generateToken
+
 // 5 min timeout
 Promise.each(doctypes, async doctype => {
 	trace("creating jobs for document type ", doctype);
@@ -79,7 +159,7 @@ async function newJob(job, { jobId, log, oada }) {
 		}
 	})
 	*/
-
+	OADA = oada;
 	// Find the net destination path, taking into consideration chroot
 	const c = job.config;
 	const _userEndpoint = c.userEndpoint;
@@ -114,28 +194,33 @@ async function newJob(job, { jobId, log, oada }) {
  * Inserts into the daily digest endpoint in the notifications service
  * @param notifications --> object with configuration for notifications
  */
-async function insertDailyDigestQueue(oada, notifications) {
+async function insertDailyDigestQueue(oada, notifications, _userToken) {
 	let _entries = Object.entries(notifications);
 	let _result = {};
 
 	for (const [email, notification] of _entries) {
 		if (notification.config.frequency === Frequency.DAILYFEED) {
 			_result[email] = {};
+			let _userNotification = {
+				docType: notification.config.docType,
+				userToken: _userToken
+			};
+			let _userNotifications = [];
+			_userNotifications.push(_userNotification);
 			_result[email] = {
 				id: email,
-				processed: false,
-				"doc1": "configuration for doc1",
-				"doc2": "configuration for doc2"
+				notifications: _userNotifications,
+				processed: false
 			};
 		}//if
 	}//for
 
-	let _date = moment().format('YYYY-MM-DD');
+	let _path = getDailyDigestPath();
 	// Link into notifications index
 	// TODO: Use for daily configuration, to be integrated with rules-engine 
 	// populates the trellis-notifications daily-feed queue
 	await oada.put({
-		path: `/bookmarks/services/${TN}/notifications/day-index/${_date}/daily-digest-queue`,
+		path: _path,
 		data: _result
 	});
 
@@ -267,12 +352,13 @@ async function createEmailJob(oada, _docType, _to, _emails, _userToken) {
  * @param _to 
  * @param _notificationsConfigData 
  */
-function populateNotifications(_to, _notificationsConfigData) {
+function populateNotifications(_to, _notificationsConfigData, _docType) {
 	let _emailsConfig = _notificationsConfigData["notifications-config"];
 	let _configTemplate = {
 		id: "",
 		type: "email",
-		frequency: ""
+		frequency: "",
+		docType: _docType
 	};
 
 	if (_to) {
@@ -332,17 +418,17 @@ function getLiveFeedEmails() {
  */
 async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
 	_notificationsConfig, _emails, job }) {
-	trace('--> Notify User ', job.config.doctype);
+	trace('--> notify User ', job.config.doctype);
 	let _tradingPartnerId = job.config.chroot.replace(/^.*trading-partners\/([^\/]+)(\/.*)$/, '$1');
 	const _docType = job.config.doctype;
-	const _userToken = uuidv4().replace(/-/g, '');
+	const _userToken = generateToken();
 	const _auth = await getAuthorization(oada, job, _userToken);
 	const _notificationsConfigData = await getNotificationConfigData(oada, _notificationsConfig);
 	let _to = parseEmails(_emails);
-	populateNotifications(_to, _notificationsConfigData);
-	let _list = await insertDailyDigestQueue(oada, notifications);
-	let _livefeedEmails = getLiveFeedEmails();
-	let _jobkey = await createEmailJob(oada, _docType, _livefeedEmails, _emails, _userToken);
+	populateNotifications(_to, _notificationsConfigData, _docType);
+	let _list = await insertDailyDigestQueue(oada, notifications, _userToken);
+	let _liveFeedEmails = getLiveFeedEmails();
+	let _jobkey = await createEmailJob(oada, _docType, _liveFeedEmails, _emails, _userToken);
 
 	let _config = {
 		result: "success",
@@ -350,7 +436,7 @@ async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
 		tnUserEndpoint: _tnUserEndpoint,
 		emailsToNotify: _emailsToNotify,
 		emails: _emails,
-		liveFeeEmails: _livefeedEmails,
+		liveFeeEmails: _liveFeedEmails,
 		tradingPartnerId: _tradingPartnerId,
 		jobkey: _jobkey,
 		notifications: notifications,
