@@ -106,21 +106,17 @@ async function dailyDigest() {
 	if (OADA !== null) {
 		try {
 			let _dailyDigestQueue = await getDailyDigestQueue(OADA);
-			//let _counter = 0;
-			//if (_dailyDigestQueue && _dailyDigestQueue.counter) {
-			//_counter = _dailyDigestQueue.counter + 1;
-			//}
+
+			//let _temp = _dailyDigestQueue["notificationsHT"]["servio@qlever.io"];
 
 			_result = {
-				id: "servio@example.com",
 				counter: _counter++,
-				//data: _dailyDigestQueue,
 				processed: false,
 				path: _path
 			};
 		}
 		catch (error) {
-			console.log("Error when getting the daily digest queue");
+			throw new Error("--> dailyDigest(): Error when getting the daily digest queue");
 		};
 		await OADA.put({
 			path: _path,
@@ -216,12 +212,16 @@ async function insertDailyDigestQueue(oada, notifications, _userToken) {
 	}//for
 
 	let _path = getDailyDigestPath();
+	let _notificationsHT = {
+		notificationsHT: _result
+	};
+
 	// Link into notifications index
 	// TODO: Use for daily configuration, to be integrated with rules-engine 
 	// populates the trellis-notifications daily-feed queue
 	await oada.put({
 		path: _path,
-		data: _result
+		data: _notificationsHT
 	});
 
 	return _result;
