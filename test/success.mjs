@@ -14,6 +14,7 @@ const error = debug('trellis-notifications#test:error');
 
 let con = false; // set with setConnection function
 let _target = "trellis-notifications";
+const DEBUG = true;
 
 const tree = {
   bookmarks: {
@@ -282,7 +283,7 @@ async function cleanupAbalonEmailJobs() {
  */
 async function cleanupTrellinsNotificationsDailyDigestQueue() {
   let _end = moment().format('YYYY-MM-DD');
-  let _begin = moment("2020-08-24");
+  let _begin = moment("2020-09-17");
 
   for (let m = moment(_begin); m.diff(_end, 'days') <= 0; m.add(1, 'days')) {
     let _date = m.format("YYYY-MM-DD");
@@ -339,7 +340,7 @@ async function putData(key_or_keys, merges) {
       });
     }
   });
-}
+}//putData
 
 /**
  * 
@@ -382,7 +383,7 @@ async function putLink(key_or_keys) {
         .catch(e => { error('Failed to put the masterid-index.  e = ', e); throw e });
     }
   });
-}
+}//putLink
 
 /**
  * 
@@ -392,7 +393,7 @@ async function putLink(key_or_keys) {
 async function putAndLinkData(key_or_keys, merges) {
   await putData(key_or_keys, merges);
   await putLink(key_or_keys);
-}
+}//putAndLinkData
 
 chai.use(chaiAsPromised);
 const expect = chai.expect;
@@ -414,11 +415,14 @@ describe('success job', () => {
     trace('before: cleanup');
     await cleanup();
 
-    trace('before: cleanup abalon email jobs');
-    await cleanupAbalonEmailJobs();
-
-    trace('before: cleanup tellis-notifications daily digest');
-    await cleanupTrellinsNotificationsDailyDigestQueue();
+    // run this ONLY in debug mode and in DEV, 
+    // if not, the tree branch will be deleted
+    if (DEBUG) {
+      trace('before: cleanup abalon email jobs');
+      await cleanupAbalonEmailJobs();
+      trace('before: cleanup tellis-notifications daily digest');
+      await cleanupTrellinsNotificationsDailyDigestQueue();
+    }//if
 
     trace('before: putData');
     // Build the tree with all the initial data:
@@ -508,7 +512,7 @@ describe('success job', () => {
         expect(result).to.have.property("fsqa-emails");
       });
 
-      it("should have exactly three emails in the object", async () => {
+      it("should have exactly fours emails in the object", async () => {
         const result = await con.get({ path: _tp_tn_path }).then(r => r.data);
 
         expect(result["fsqa-emails"]).to.be.an("string");
@@ -517,7 +521,7 @@ describe('success job', () => {
             name: name || undefined,
             email: address
           }));
-        expect(_to).to.have.length(3);
+        expect(_to).to.have.length(4);
       });
 
       const _jobKeys = ["doctype", "chroot", "userEndpoint", "emailsEndpoint",

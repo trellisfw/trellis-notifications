@@ -23,6 +23,8 @@ const trace = debug(`${TN}:trace`);
 
 const TOKEN = config.get('token');
 let DOMAIN = config.get('domain') || '';
+let DAILY_DIGEST_TIME = config.get("dailyDigestTime") || 8;
+const MS_IN_A_DAY = 86400000;
 if (DOMAIN.match(/^http/)) DOMAIN = DOMAIN.replace(/^https:\/\//, '')
 
 if (DOMAIN === 'localhost' || DOMAIN === 'proxy') {
@@ -45,7 +47,8 @@ const DocType = {
 	AUDIT: "audit",
 	COI: "coi",
 	CERT: "cert",
-	LOG: "log"
+	LOG: "log",
+	ALL: "all"
 };
 
 Object.freeze(DocType);
@@ -57,17 +60,25 @@ const Frequency = {
 
 Object.freeze(Frequency);
 
+let notifications = {};
+let dailyNotifications = {};
+
 const doctypes = [DocType.AUDIT, DocType.CERT, DocType.COI, DocType.LOG];
 
 let now = new Date();
 
-let msTill1700 = 60000; //new Date(now.getFullYear(), now.getMonth(), now.getDate(), 8, 0, 0, 0) - now;
+let msTill1700 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), DAILY_DIGEST_TIME, 0, 0, 0) - now;
 
-/*if (msTill1700 < 0) {
-	msTill1700 += 86400000;
-}*/
+if (msTill1700 < 0) {
+	msTill1700 += MS_IN_A_DAY;
+}
 
-setInterval(dailyDigest, msTill1700);
+setTimeout(setDailyDigestTimer, msTill1700);
+
+async function setDailyDigestTimer() {
+	await dailyDigest();
+	setInterval(dailyDigest, MS_IN_A_DAY);
+}//end setDailyDigestTimer
 
 /**
  * get Daily Digest Path
@@ -96,6 +107,29 @@ async function getDailyDigestQueue(oada) {
 	//return _dailyDigestQueue;
 }//end getDailyDigestQueue
 
+/**
+ * Updating daily digest after processing daily digest
+ * @param oada 
+ * @param _content 
+ */
+async function updateDailyDigestQueue(oada, _content) {
+	let _path = getDailyDigestPath();
+
+	return oada.put({
+		path: _path,
+		data: _content
+	}).catch(e => {
+		throw new Error("--> updateDailyDigest(): Failed to update daily digest " + e);
+	});
+}//end updateDailyDigestQueue
+
+/**
+ * Flushing daily notifications hash table after processing the queue
+ */
+function flushDailyNotifications() {
+	dailyNotifications = {};
+}//end flushDailyNotifications()
+
 let _counter = 0;
 /**
  * Daily Digest Main Function
@@ -105,25 +139,45 @@ async function dailyDigest() {
 	let _result = {};
 	if (OADA !== null) {
 		try {
-			let _dailyDigestQueue = await getDailyDigestQueue(OADA);
+			let _dailyDigest = await getDailyDigestQueue(OADA);
 
-			//let _temp = _dailyDigestQueue["notificationsHT"]["servio@qlever.io"];
+			if (_dailyDigest && (!_dailyDigest.hasOwnProperty("processed") || !_dailyDigest.processed)) {
 
-			_result = {
-				counter: _counter++,
-				processed: false,
-				path: _path
-			};
-		}
-		catch (error) {
+				let _dailyDigestHT = _dailyDigest["notificationsHT"];
+
+				for (let _email of Object.keys(_dailyDigestHT)) {
+					let _userToken = "";
+					let _docType = "";
+					if (_dailyDigestHT[_email].notifications.length >= 2) {
+						_docType = DocType.ALL;
+					} else {
+						_docType = _dailyDigestHT[_email].notifications[0].docType;
+					}//if
+
+					for (let _notification in _dailyDigestHT[_email].notifications) {
+						_userToken = _dailyDigestHT[_email].notifications[0].userToken;
+					} //for #2
+					await createEmailJob(OADA, _docType, _email, _email, _userToken);
+				}//for
+
+				_result = {
+					counter: _counter++,
+					processed: true,
+					path: _path
+				};
+			}//if
+		} catch (error) {
 			throw new Error("--> dailyDigest(): Error when getting the daily digest queue");
 		};
+
 		await OADA.put({
 			path: _path,
 			data: _result
 		}).catch(e => {
 			throw new Error("Failed to put resource for daily digest " + e);
 		});
+
+		flushDailyNotifications();
 	}//if
 }//end daily digest
 
@@ -139,9 +193,6 @@ Promise.each(doctypes, async doctype => {
 	trace("creating jobs for document type ", doctype);
 	service.on(`${doctype}-changed`, config.get('timeout'), newJob);
 });
-
-let notifications = {};
-let dailyNotifications = [];
 
 async function newJob(job, { jobId, log, oada }) {
 	/*
@@ -186,8 +237,11 @@ async function newJob(job, { jobId, log, oada }) {
 	return _config;
 }//end newJob
 
+
+//TODO: need to flush the hashtable when done
 /**
  * Inserts into the daily digest endpoint in the notifications service
+ * keeps track of the notifications that are need to send at the end of the day
  * @param notifications --> object with configuration for notifications
  */
 async function insertDailyDigestQueue(oada, notifications, _userToken) {
@@ -196,18 +250,30 @@ async function insertDailyDigestQueue(oada, notifications, _userToken) {
 
 	for (const [email, notification] of _entries) {
 		if (notification.config.frequency === Frequency.DAILYFEED) {
+			let _userNotifications = [];
+			if (dailyNotifications[email]) {
+				//copying previous array of notifications
+				_userNotifications = dailyNotifications[email].notifications;
+			} else {
+				//initialize the hash table entry
+				dailyNotifications[email] = {};
+				dailyNotifications[email].notifications = [];
+				dailyNotifications[email].id = email;
+				dailyNotifications[email].processed = false;
+			}// if
 			_result[email] = {};
 			let _userNotification = {
 				docType: notification.config.docType,
 				userToken: _userToken
 			};
-			let _userNotifications = [];
+			//let _userNotifications = [];
 			_userNotifications.push(_userNotification);
 			_result[email] = {
 				id: email,
 				notifications: _userNotifications,
 				processed: false
 			};
+			dailyNotifications[email].notifications = _userNotifications;
 		}//if
 	}//for
 
@@ -216,9 +282,6 @@ async function insertDailyDigestQueue(oada, notifications, _userToken) {
 		notificationsHT: _result
 	};
 
-	// Link into notifications index
-	// TODO: Use for daily configuration, to be integrated with rules-engine 
-	// populates the trellis-notifications daily-feed queue
 	await oada.put({
 		path: _path,
 		data: _notificationsHT
@@ -246,6 +309,9 @@ function getSubject(docType) {
 			break;
 		case DocType.AUDIT:
 			_subject = "New FSQA audit available";
+			break;
+		case DocType.ALL:
+			_subject = "Daily digest - new documents available";
 			break;
 		default:
 			throw new Error("Document type not recognized");
