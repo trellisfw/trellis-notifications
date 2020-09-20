@@ -41,7 +41,7 @@ const service = new Service(TN, DOMAIN, TOKEN, 1, {
 			posturl: config.get('slackposturl')
 		}
 	]
-}) // 1 concurrent job
+}); // 1 concurrent job
 
 const DocType = {
 	AUDIT: "audit",
@@ -76,8 +76,12 @@ if (msTill1700 < 0) {
 setTimeout(setDailyDigestTimer, msTill1700);
 
 async function setDailyDigestTimer() {
-	await dailyDigest();
-	setInterval(dailyDigest, MS_IN_A_DAY);
+	try {
+		await dailyDigest();
+		setInterval(dailyDigest, MS_IN_A_DAY);
+	} catch (error) {
+		trace("Error: dailyDigest() ", e);
+	};
 }//end setDailyDigestTimer
 
 /**
@@ -96,15 +100,12 @@ function getDailyDigestPath() {
 async function getDailyDigestQueue(oada) {
 	let _path = getDailyDigestPath();
 
-	//const _dailyDigestQueue = await 
 	return oada
 		.get({ path: _path })
 		.then(r => r.data)
 		.catch(e => {
 			throw new Error("Failed to get daily digest queue, error " + e);
 		});
-
-	//return _dailyDigestQueue;
 }//end getDailyDigestQueue
 
 /**
@@ -142,7 +143,6 @@ async function dailyDigest() {
 			let _dailyDigest = await getDailyDigestQueue(OADA);
 
 			if (_dailyDigest && (!_dailyDigest.hasOwnProperty("processed") || !_dailyDigest.processed)) {
-
 				let _dailyDigestHT = _dailyDigest["notificationsHT"];
 
 				for (let _email of Object.keys(_dailyDigestHT)) {
@@ -165,19 +165,18 @@ async function dailyDigest() {
 					processed: true,
 					path: _path
 				};
+				await OADA.put({
+					path: _path,
+					data: _result
+				}).catch(e => {
+					throw new Error("Failed to put resource for daily digest " + e);
+				});
+
+				flushDailyNotifications();
 			}//if
 		} catch (error) {
 			throw new Error("--> dailyDigest(): Error when getting the daily digest queue");
 		};
-
-		await OADA.put({
-			path: _path,
-			data: _result
-		}).catch(e => {
-			throw new Error("Failed to put resource for daily digest " + e);
-		});
-
-		flushDailyNotifications();
 	}//if
 }//end daily digest
 

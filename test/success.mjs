@@ -282,7 +282,8 @@ async function cleanupAbalonEmailJobs() {
  * Cleaning up trellis-notifications daily-digest queue
  */
 async function cleanupTrellinsNotificationsDailyDigestQueue() {
-  let _end = moment().format('YYYY-MM-DD');
+  //let _end = moment().format('YYYY-MM-DD');
+  let _end = moment("2020-09-19");
   let _begin = moment("2020-09-17");
 
   for (let m = moment(_begin); m.diff(_end, 'days') <= 0; m.add(1, 'days')) {
