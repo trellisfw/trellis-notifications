@@ -21,14 +21,10 @@ POST /bookmarks/services/trellis-notifications/jobs
         "user": {
             "id": "USERID"
         }
-    }
+    },
+    src: { _id: "resources/123abc" }
 }
 ```
-
-### Roadmap
-* Integrate rules-engine with this service.
-* Include daily digest of notifications integrated with rules.
-
 
 ### Installation
 

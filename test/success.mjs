@@ -452,7 +452,8 @@ describe('success job', () => {
           user: {
             id: "USERID"
           }
-        }
+        },
+        src: { _id: "resources/123abc" }
       });
 
 
@@ -500,8 +501,6 @@ describe('success job', () => {
   _.each(doctypes, doctype => {
     describe('#' + doctype, () => {
       const jobtype = doctype + 'job';
-      const i = items[doctype];
-      const j = items[jobtype];
       const _tn_jobs = "/bookmarks/services/trellis-notifications/";
       const _job_success = "jobs-success/day-index/" + moment().format('YYYY-MM-DD') +
         "/TEST-TRELLISNOTIFICATIONS-";
@@ -563,6 +562,14 @@ describe('success job', () => {
         expect(result.config).to.have.all.keys(_jobKeys);
       });
 
+    });
+  });//each
+  describe("#rules", () => {
+    let _path = "/bookmarks/services/trellis-notifications/rules";
+    it(`It should include a rules endpoint`, async () => {
+      const result = await con.get({ path: _path }).then(r => r.data);
+      expect(result).to.have.property("actions");
+      expect(result).to.have.property("compiled");
     });
   });
 });

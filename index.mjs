@@ -236,8 +236,6 @@ async function newJob(job, { jobId, log, oada }) {
 	return _config;
 }//end newJob
 
-
-//TODO: need to flush the hashtable when done
 /**
  * Inserts into the daily digest endpoint in the notifications service
  * keeps track of the notifications that are need to send at the end of the day
