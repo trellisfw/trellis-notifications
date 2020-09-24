@@ -1,19 +1,20 @@
-import { readFileSync } from "fs";
+//import { readFileSync } from "fs";
 import Promise from "bluebird";
 import _ from "lodash";
 import debug from "debug";
 import Jobs from "@oada/jobs";
 import tree from "./tree.js";
-import jsonpointer from "jsonpointer";
+//import jsonpointer from "jsonpointer";
 import template from "./email_templates/index.js";
 import { v4 as uuidv4 } from "uuid";
 import emailParser from "email-addresses";
 import config from "./config.js";
 import moment from "moment";
-import Worker from "@oada/rules-worker";
-const { RulesWorker } = Worker;
+//import Worker from "@oada/rules-worker";
+//const { RulesWorker } = Worker;
 const { Service } = Jobs;
 const TN = "trellis-notifications";
+let OADA = null;
 
 const error = debug(`${TN}:error`);
 const warn = debug(`${TN}:warn`);
@@ -22,6 +23,8 @@ const trace = debug(`${TN}:trace`);
 
 const TOKEN = config.get('token');
 let DOMAIN = config.get('domain') || '';
+let DAILY_DIGEST_TIME = config.get("dailyDigestTime") || 8;
+const MS_IN_A_DAY = 86400000;
 if (DOMAIN.match(/^http/)) DOMAIN = DOMAIN.replace(/^https:\/\//, '')
 
 if (DOMAIN === 'localhost' || DOMAIN === 'proxy') {
@@ -38,13 +41,14 @@ const service = new Service(TN, DOMAIN, TOKEN, 1, {
 			posturl: config.get('slackposturl')
 		}
 	]
-}) // 1 concurrent job
+}); // 1 concurrent job
 
 const DocType = {
 	AUDIT: "audit",
 	COI: "coi",
 	CERT: "cert",
-	LOG: "log"
+	LOG: "log",
+	ALL: "all"
 };
 
 Object.freeze(DocType);
@@ -56,16 +60,138 @@ const Frequency = {
 
 Object.freeze(Frequency);
 
+let notifications = {};
+let dailyNotifications = {};
+
 const doctypes = [DocType.AUDIT, DocType.CERT, DocType.COI, DocType.LOG];
+
+let now = new Date();
+
+let msTill1700 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), DAILY_DIGEST_TIME, 0, 0, 0) - now;
+
+if (msTill1700 < 0) {
+	msTill1700 += MS_IN_A_DAY;
+}
+
+setTimeout(setDailyDigestTimer, msTill1700);
+
+async function setDailyDigestTimer() {
+	try {
+		await dailyDigest();
+		setInterval(dailyDigest, MS_IN_A_DAY);
+	} catch (error) {
+		trace("Error: dailyDigest() ", e);
+	};
+}//end setDailyDigestTimer
+
+/**
+ * get Daily Digest Path
+ */
+function getDailyDigestPath() {
+	let _date = moment().format('YYYY-MM-DD');
+	let _path = `/bookmarks/services/${TN}/notifications/day-index/${_date}/daily-digest-queue`;
+	return _path;
+}//end getDailyDigestPath
+
+/**
+ * get Daily Digest Queue
+ * @param oada 
+ */
+async function getDailyDigestQueue(oada) {
+	let _path = getDailyDigestPath();
+
+	return oada
+		.get({ path: _path })
+		.then(r => r.data)
+		.catch(e => {
+			throw new Error("Failed to get daily digest queue, error " + e);
+		});
+}//end getDailyDigestQueue
+
+/**
+ * Updating daily digest after processing daily digest
+ * @param oada 
+ * @param _content 
+ */
+async function updateDailyDigestQueue(oada, _content) {
+	let _path = getDailyDigestPath();
+
+	return oada.put({
+		path: _path,
+		data: _content
+	}).catch(e => {
+		throw new Error("--> updateDailyDigest(): Failed to update daily digest " + e);
+	});
+}//end updateDailyDigestQueue
+
+/**
+ * Flushing daily notifications hash table after processing the queue
+ */
+function flushDailyNotifications() {
+	dailyNotifications = {};
+}//end flushDailyNotifications()
+
+let _counter = 0;
+/**
+ * Daily Digest Main Function
+ */
+async function dailyDigest() {
+	let _path = getDailyDigestPath();
+	let _result = {};
+	if (OADA !== null) {
+		try {
+			let _dailyDigest = await getDailyDigestQueue(OADA);
+
+			if (_dailyDigest && (!_dailyDigest.hasOwnProperty("processed") || !_dailyDigest.processed)) {
+				let _dailyDigestHT = _dailyDigest["notificationsHT"];
+
+				for (let _email of Object.keys(_dailyDigestHT)) {
+					let _userToken = "";
+					let _docType = "";
+					if (_dailyDigestHT[_email].notifications.length >= 2) {
+						_docType = DocType.ALL;
+					} else {
+						_docType = _dailyDigestHT[_email].notifications[0].docType;
+					}//if
+
+					for (let _notification in _dailyDigestHT[_email].notifications) {
+						_userToken = _dailyDigestHT[_email].notifications[0].userToken;
+					} //for #2
+					await createEmailJob(OADA, _docType, _email, _email, _userToken);
+				}//for
+
+				_result = {
+					counter: _counter++,
+					processed: true,
+					path: _path
+				};
+				await OADA.put({
+					path: _path,
+					data: _result
+				}).catch(e => {
+					throw new Error("Failed to put resource for daily digest " + e);
+				});
+
+				flushDailyNotifications();
+			}//if
+		} catch (error) {
+			throw new Error("--> dailyDigest(): Error when getting the daily digest queue");
+		};
+	}//if
+}//end daily digest
+
+/**
+ * Generates a token
+ */
+function generateToken() {
+	return uuidv4().replace(/-/g, '');
+}//end generateToken
 
 // 5 min timeout
 Promise.each(doctypes, async doctype => {
 	trace("creating jobs for document type ", doctype);
 	service.on(`${doctype}-changed`, config.get('timeout'), newJob);
 });
-
-let notifications = {};
-let dailyNotifications = [];
 
 async function newJob(job, { jobId, log, oada }) {
 	/*
@@ -79,7 +205,7 @@ async function newJob(job, { jobId, log, oada }) {
 		}
 	})
 	*/
-
+	OADA = oada;
 	// Find the net destination path, taking into consideration chroot
 	const c = job.config;
 	const _userEndpoint = c.userEndpoint;
@@ -112,31 +238,50 @@ async function newJob(job, { jobId, log, oada }) {
 
 /**
  * Inserts into the daily digest endpoint in the notifications service
+ * keeps track of the notifications that are need to send at the end of the day
  * @param notifications --> object with configuration for notifications
  */
-async function insertDailyDigestQueue(oada, notifications) {
+async function insertDailyDigestQueue(oada, notifications, _userToken) {
 	let _entries = Object.entries(notifications);
 	let _result = {};
 
 	for (const [email, notification] of _entries) {
 		if (notification.config.frequency === Frequency.DAILYFEED) {
+			let _userNotifications = [];
+			if (dailyNotifications[email]) {
+				//copying previous array of notifications
+				_userNotifications = dailyNotifications[email].notifications;
+			} else {
+				//initialize the hash table entry
+				dailyNotifications[email] = {};
+				dailyNotifications[email].notifications = [];
+				dailyNotifications[email].id = email;
+				dailyNotifications[email].processed = false;
+			}// if
 			_result[email] = {};
+			let _userNotification = {
+				docType: notification.config.docType,
+				userToken: _userToken
+			};
+			//let _userNotifications = [];
+			_userNotifications.push(_userNotification);
 			_result[email] = {
 				id: email,
-				processed: false,
-				"doc1": "configuration for doc1",
-				"doc2": "configuration for doc2"
+				notifications: _userNotifications,
+				processed: false
 			};
+			dailyNotifications[email].notifications = _userNotifications;
 		}//if
 	}//for
 
-	let _date = moment().format('YYYY-MM-DD');
-	// Link into notifications index
-	// TODO: Use for daily configuration, to be integrated with rules-engine 
-	// populates the trellis-notifications daily-feed queue
+	let _path = getDailyDigestPath();
+	let _notificationsHT = {
+		notificationsHT: _result
+	};
+
 	await oada.put({
-		path: `/bookmarks/services/${TN}/notifications/day-index/${_date}/daily-digest-queue`,
-		data: _result
+		path: _path,
+		data: _notificationsHT
 	});
 
 	return _result;
@@ -161,6 +306,9 @@ function getSubject(docType) {
 			break;
 		case DocType.AUDIT:
 			_subject = "New FSQA audit available";
+			break;
+		case DocType.ALL:
+			_subject = "Daily digest - new documents available";
 			break;
 		default:
 			throw new Error("Document type not recognized");
@@ -267,12 +415,13 @@ async function createEmailJob(oada, _docType, _to, _emails, _userToken) {
  * @param _to 
  * @param _notificationsConfigData 
  */
-function populateNotifications(_to, _notificationsConfigData) {
+function populateNotifications(_to, _notificationsConfigData, _docType) {
 	let _emailsConfig = _notificationsConfigData["notifications-config"];
 	let _configTemplate = {
 		id: "",
 		type: "email",
-		frequency: ""
+		frequency: "",
+		docType: _docType
 	};
 
 	if (_to) {
@@ -332,17 +481,17 @@ function getLiveFeedEmails() {
  */
 async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
 	_notificationsConfig, _emails, job }) {
-	trace('--> Notify User ', job.config.doctype);
+	trace('--> notify User ', job.config.doctype);
 	let _tradingPartnerId = job.config.chroot.replace(/^.*trading-partners\/([^\/]+)(\/.*)$/, '$1');
 	const _docType = job.config.doctype;
-	const _userToken = uuidv4().replace(/-/g, '');
+	const _userToken = generateToken();
 	const _auth = await getAuthorization(oada, job, _userToken);
 	const _notificationsConfigData = await getNotificationConfigData(oada, _notificationsConfig);
 	let _to = parseEmails(_emails);
-	populateNotifications(_to, _notificationsConfigData);
-	let _list = await insertDailyDigestQueue(oada, notifications);
-	let _livefeedEmails = getLiveFeedEmails();
-	let _jobkey = await createEmailJob(oada, _docType, _livefeedEmails, _emails, _userToken);
+	populateNotifications(_to, _notificationsConfigData, _docType);
+	let _list = await insertDailyDigestQueue(oada, notifications, _userToken);
+	let _liveFeedEmails = getLiveFeedEmails();
+	let _jobkey = await createEmailJob(oada, _docType, _liveFeedEmails, _emails, _userToken);
 
 	let _config = {
 		result: "success",
@@ -350,7 +499,7 @@ async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
 		tnUserEndpoint: _tnUserEndpoint,
 		emailsToNotify: _emailsToNotify,
 		emails: _emails,
-		liveFeeEmails: _livefeedEmails,
+		liveFeeEmails: _liveFeedEmails,
 		tradingPartnerId: _tradingPartnerId,
 		jobkey: _jobkey,
 		notifications: notifications,

@@ -13,11 +13,12 @@
  * limitations under the License.
  */
 
-  //domain: 'proxy',
+//domain: 'proxy',
 export default {
   domain: 'proxy',
   token: 'god-proxy',
   timeout: 5 * 60 * 1000, // 30 seconds
   slackposturl: 'https://example.com', // use a real slack webhook URL
-  skin: 'default' // used for abalonemail job creation
+  skin: 'default', // used for abalonemail job creation
+  dailyDigestTime: 8
 }
