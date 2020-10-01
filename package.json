@@ -15,8 +15,8 @@
   "dependencies": {
     "@oada/client": "^1.0.4",
     "@oada/jobs": "^1.0.4",
-    "@oada/rules-worker": "git+ssh://git@github.com:Qlever-LLC/rules-worker.git",
     "@oada/list-lib": "^1.0.1",
+    "@trellisfw/rules-worker": "^1.0.0",
     "@trellisfw/signatures": "^2.1.3",
     "bluebird": "^3.7.2",
     "debug": "^4.1.1",
