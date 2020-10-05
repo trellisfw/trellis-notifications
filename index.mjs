@@ -12,6 +12,13 @@ import config from "./config.js";
 import moment from "moment";
 import Worker from "@trellisfw/rules-worker";
 const { RulesWorker, Action, Condition } = Worker;
+//var CronJob = require('cron').CronJob;
+import Cron from "cron";
+const { CronJob } = Cron;
+const DAILY = '00 59 23 * * *';
+const HOURLY = '00 00 * * * *';
+const FIVEMIN = "00 */5 * * * *";
+const DAILY_6PM = '00 00 18 * * *';
 
 const { Service } = Jobs;
 const TN = "trellis-notifications";
@@ -75,6 +82,27 @@ if (msTill1700 < 0) {
 }
 
 setTimeout(setDailyDigestTimer, msTill1700);
+
+let _CRONCounter = 0;
+
+var job = new CronJob(HOURLY, async function () {
+	let _path = getDailyDigestPath();
+	let _result = {};
+	if (OADA !== null) {
+		_result = {
+			counter: _CRONCounter,
+			processed: true,
+			path: _path
+		};
+		await OADA.put({
+			path: _path,
+			data: _result
+		}).catch(e => {
+			throw new Error("Failed to put resource for hourly digest " + e);
+		});
+	}
+}, null, true, 'America/Indiana/Indianapolis');
+job.start();
 
 async function setDailyDigestTimer() {
 	try {
@@ -512,191 +540,187 @@ async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
 
 service.start().catch(e => console.error('Service threw uncaught error: ', e));
 
-async function temp() {
-	await console.log("this");
-}
-
-
-let _rulesTree = {
-	bookmarks: {
-		_type: 'application/vnd.oada.bookmarks.1+json',
-		_rev: 0,
-		services: {
-			'_type': 'application/vnd.oada.services.1+json',
-			'_rev': 0,
-			'*': {
-				_type: 'application/vnd.oada.service.1+json',
-				_rev: 0,
-				rules: {
-					_type: 'application/vnd.oada.rules.1+json',
-					_rev: 0,
-					actions: {
-						'_type': 'application/vnd.oada.rules.actions.1+json',
-						'_rev': 0,
-						'*': {
-							_type: 'application/vnd.oada.rules.action.1+json',
-							_rev: 0,
-						},
-					},
-					conditions: {
-						'_type': 'application/vnd.oada.rules.conditions.1+json',
-						'_rev': 0,
-						'*': {
-							_type: 'application/vnd.oada.rules.condition.1+json',
-							_rev: 0,
-						},
-					},
-					configured: {
-						'_type': 'application/vnd.oada.rules.configured.1+json',
-						'_rev': 0,
-						'*': {
-							_type: 'application/vnd.oada.rule.configured.1+json',
-							_rev: 0,
-						},
-					},
-					compiled: {
-						'_type': 'application/vnd.oada.rules.compiled.1+json',
-						'_rev': 0,
-						'*': {
-							_type: 'application/vnd.oada.rule.compiled.1+json',
-							_rev: 0,
-						},
-					},
-				},
-			},
-		},
-	},
-};
+// let _rulesTree = {
+// 	bookmarks: {
+// 		_type: 'application/vnd.oada.bookmarks.1+json',
+// 		_rev: 0,
+// 		services: {
+// 			'_type': 'application/vnd.oada.services.1+json',
+// 			'_rev': 0,
+// 			'*': {
+// 				_type: 'application/vnd.oada.service.1+json',
+// 				_rev: 0,
+// 				rules: {
+// 					_type: 'application/vnd.oada.rules.1+json',
+// 					_rev: 0,
+// 					actions: {
+// 						'_type': 'application/vnd.oada.rules.actions.1+json',
+// 						'_rev': 0,
+// 						'*': {
+// 							_type: 'application/vnd.oada.rules.action.1+json',
+// 							_rev: 0,
+// 						},
+// 					},
+// 					conditions: {
+// 						'_type': 'application/vnd.oada.rules.conditions.1+json',
+// 						'_rev': 0,
+// 						'*': {
+// 							_type: 'application/vnd.oada.rules.condition.1+json',
+// 							_rev: 0,
+// 						},
+// 					},
+// 					configured: {
+// 						'_type': 'application/vnd.oada.rules.configured.1+json',
+// 						'_rev': 0,
+// 						'*': {
+// 							_type: 'application/vnd.oada.rule.configured.1+json',
+// 							_rev: 0,
+// 						},
+// 					},
+// 					compiled: {
+// 						'_type': 'application/vnd.oada.rules.compiled.1+json',
+// 						'_rev': 0,
+// 						'*': {
+// 							_type: 'application/vnd.oada.rule.compiled.1+json',
+// 							_rev: 0,
+// 						},
+// 					},
+// 				},
+// 			},
+// 		},
+// 	},
+// };
 
 // creating actions structure
-let _rulesData = {
-	"notify-fsqa-emails-livefeed": {
-		name: "notify-fsqa-emails-livefeed",
-		service: "trellis-notifications",
-		type: "application/json",
-		description: "send notification to fsqa emails"
-	},
-	"notify-audit-emails-livefeed": {
-		name: "notify-audit-emails-livefeed",
-		service: "trellis-notifications",
-		type: "application/json",
-		description: "send notification to audit emails"
-	},
-	"notify-coi-emails-livefeed": {
-		name: "notify-coi-emails-livefeed",
-		service: "trellis-notifications",
-		type: "application/json",
-		description: "send notification to coi emails"
-	},
-	"notify-log-emails-livefeed": {
-		name: "notify-log-emails-livefeed",
-		service: "trellis-notifications",
-		type: "application/json",
-		description: "send notification to log emails"
-	},
-	"notify-fsqa-emails-dailyfeed": {
-		name: "notify-fsqa-emails-dailyfeed",
-		service: "trellis-notifications",
-		type: "application/json",
-		description: "send daily notification to fsqa emails"
-	},
-	"notify-audit-emails-dailyfeed": {
-		name: "notify-audit-emails-dailyfeed",
-		service: "trellis-notifications",
-		type: "application/json",
-		description: "send daily notification to audit emails"
-	},
-	"notify-coi-emails-dailyfeed": {
-		name: "notify-coi-emails-dailyfeed",
-		service: "trellis-notifications",
-		type: "application/json",
-		description: "send daily notification to coi emails"
-	},
-	"notify-log-emails-dailyfeed": {
-		name: "notify-log-emails-dailyfeed",
-		service: "trellis-notifications",
-		type: "application/json",
-		description: "send daily notification to log emails"
-	}
-};
+// let _rulesData = {
+// 	"notify-fsqa-emails-livefeed": {
+// 		name: "notify-fsqa-emails-livefeed",
+// 		service: "trellis-notifications",
+// 		type: "application/json",
+// 		description: "send notification to fsqa emails"
+// 	},
+// 	"notify-audit-emails-livefeed": {
+// 		name: "notify-audit-emails-livefeed",
+// 		service: "trellis-notifications",
+// 		type: "application/json",
+// 		description: "send notification to audit emails"
+// 	},
+// 	"notify-coi-emails-livefeed": {
+// 		name: "notify-coi-emails-livefeed",
+// 		service: "trellis-notifications",
+// 		type: "application/json",
+// 		description: "send notification to coi emails"
+// 	},
+// 	"notify-log-emails-livefeed": {
+// 		name: "notify-log-emails-livefeed",
+// 		service: "trellis-notifications",
+// 		type: "application/json",
+// 		description: "send notification to log emails"
+// 	},
+// 	"notify-fsqa-emails-dailyfeed": {
+// 		name: "notify-fsqa-emails-dailyfeed",
+// 		service: "trellis-notifications",
+// 		type: "application/json",
+// 		description: "send daily notification to fsqa emails"
+// 	},
+// 	"notify-audit-emails-dailyfeed": {
+// 		name: "notify-audit-emails-dailyfeed",
+// 		service: "trellis-notifications",
+// 		type: "application/json",
+// 		description: "send daily notification to audit emails"
+// 	},
+// 	"notify-coi-emails-dailyfeed": {
+// 		name: "notify-coi-emails-dailyfeed",
+// 		service: "trellis-notifications",
+// 		type: "application/json",
+// 		description: "send daily notification to coi emails"
+// 	},
+// 	"notify-log-emails-dailyfeed": {
+// 		name: "notify-log-emails-dailyfeed",
+// 		service: "trellis-notifications",
+// 		type: "application/json",
+// 		description: "send daily notification to log emails"
+// 	}
+// };
 
-let _rulesDataKeys = Object.keys(_rulesData);
+// let _rulesDataKeys = Object.keys(_rulesData);
 const _conn = service.getClient(DOMAIN).clone(TOKEN);
+OADA = _conn;
 
-Promise.each(_rulesDataKeys, async _key => {
-	trace("creating action for document type and frequency ", _key);
-	// Register action in OADA
-	const { headers } = await _conn.put({
-		path: `/bookmarks/services/trellis-notifications/rules/actions/${_rulesData[_key].name}`,
-		tree: _rulesTree,
-		data: _rulesData[_key],
-	});
-});
+// Promise.each(_rulesDataKeys, async _key => {
+// 	trace("creating action for document type and frequency ", _key);
+// 	// Register action in OADA
+// 	const { headers } = await _conn.put({
+// 		path: `/bookmarks/services/trellis-notifications/rules/actions/${_rulesData[_key].name}`,
+// 		tree: _rulesTree,
+// 		data: _rulesData[_key],
+// 	});
+// });
 
 /*
 * rules-engine - set of actions related to trellis-notifications
 *
 */
-// new RulesWorker({
-// 	name: "trellis-notifications",
-// 	conn: service.getClient(DOMAIN).clone(TOKEN),
-// 	actions: [
-// 		Action({
-// 			name: "notify-fsqa-emails-livefeed",
-// 			service: "trellis-notifications",
-// 			type: "application/json",
-// 			description: "send notification to fsqa emails",
-// 			callback: temp
-// 		}),
-// 		Action({
-// 			name: "notify-audit-emails-livefeed",
-// 			service: "trellis-notifications",
-// 			type: "application/json",
-// 			description: "send a notification to audit emails",
-// 			callback: temp
-// 		}),
-// 		Action({
-// 			name: "notify-coi-emails-livefeed",
-// 			service: "trellis-notifications",
-// 			type: "application/json",
-// 			description: "send a notification to coi emails",
-// 			callback: temp
-// 		}),
-// 		Action({
-// 			name: "notify-log-emails-livefeed",
-// 			service: "trellis-notifications",
-// 			type: "application/json",
-// 			description: "send a notification to log emails",
-// 			callback: temp
-// 		}),
-// 		Action({
-// 			name: "notify-fsqa-emails-dailydigest",
-// 			service: "trellis-notifications",
-// 			type: "application/json",
-// 			description: "send daily notification to fsqa emails",
-// 			callback: temp
-// 		}),
-// 		Action({
-// 			name: "notify-audit-emails-dailydigest",
-// 			service: "trellis-notifications",
-// 			type: "application/json",
-// 			description: "send a daily notification to audit emails",
-// 			callback: temp
-// 		}),
-// 		Action({
-// 			name: "notify-coi-emails-dailydigest",
-// 			service: "trellis-notifications",
-// 			type: "application/json",
-// 			description: "send a daily notification to coi emails",
-// 			callback: temp
-// 		}),
-// 		Action({
-// 			name: "notify-log-emails-dailydigest",
-// 			service: "trellis-notifications",
-// 			type: "application/json",
-// 			description: "send a daily notification to log emails",
-// 			callback: temp
-// 		})
-// 	]
-// });
+new RulesWorker({
+	name: "trellis-notifications",
+	conn: service.getClient(DOMAIN).clone(TOKEN),
+	actions: [
+		Action({
+			name: "notify-fsqa-emails-livefeed",
+			service: "trellis-notifications",
+			type: "application/json",
+			description: "send notification to fsqa emails",
+			callback: notifyUser
+		}),
+		Action({
+			name: "notify-audit-emails-livefeed",
+			service: "trellis-notifications",
+			type: "application/json",
+			description: "send a notification to audit emails",
+			callback: notifyUser
+		}),
+		Action({
+			name: "notify-coi-emails-livefeed",
+			service: "trellis-notifications",
+			type: "application/json",
+			description: "send a notification to coi emails",
+			callback: notifyUser
+		}),
+		Action({
+			name: "notify-log-emails-livefeed",
+			service: "trellis-notifications",
+			type: "application/json",
+			description: "send a notification to log emails",
+			callback: notifyUser
+		}),
+		Action({
+			name: "notify-fsqa-emails-dailydigest",
+			service: "trellis-notifications",
+			type: "application/json",
+			description: "send daily notification to fsqa emails",
+			callback: notifyUser
+		}),
+		Action({
+			name: "notify-audit-emails-dailydigest",
+			service: "trellis-notifications",
+			type: "application/json",
+			description: "send a daily notification to audit emails",
+			callback: notifyUser
+		}),
+		Action({
+			name: "notify-coi-emails-dailydigest",
+			service: "trellis-notifications",
+			type: "application/json",
+			description: "send a daily notification to coi emails",
+			callback: notifyUser
+		}),
+		Action({
+			name: "notify-log-emails-dailydigest",
+			service: "trellis-notifications",
+			type: "application/json",
+			description: "send a daily notification to log emails",
+			callback: notifyUser
+		})
+	]
+});
 
