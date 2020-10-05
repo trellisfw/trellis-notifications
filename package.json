@@ -25,6 +25,7 @@
     "esm": "^3.2.25",
     "flat": "^5.0.1",
     "jsonpointer": "^4.1.0",
+    "jsonschema8": "^1.1.1",
     "lodash": "^4.17.15",
     "make-promises-safe": "^5.1.0",
     "nconf": "^0.10.0",
