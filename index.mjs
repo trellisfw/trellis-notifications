@@ -1,18 +1,16 @@
-//import { readFileSync } from "fs";
 import Promise from "bluebird";
 import _ from "lodash";
 import debug from "debug";
 import Jobs from "@oada/jobs";
 import tree from "./tree.js";
-//import jsonpointer from "jsonpointer";
 import template from "./email_templates/index.js";
 import { v4 as uuidv4 } from "uuid";
 import emailParser from "email-addresses";
 import config from "./config.js";
 import moment from "moment";
-import Worker from "@trellisfw/rules-worker";
+//import Worker from "@trellisfw/rules-worker";
+import Worker from "@oada/rules-worker";
 const { RulesWorker, Action, Condition } = Worker;
-//var CronJob = require('cron').CronJob;
 import Cron from "cron";
 const { CronJob } = Cron;
 const DAILY = '00 59 23 * * *';
@@ -50,6 +48,10 @@ const service = new Service(TN, DOMAIN, TOKEN, 1, {
 		// }
 	]
 }); // 1 concurrent job
+
+const NotificationType = {
+	EMAIL: "email"
+};
 
 const DocType = {
 	AUDIT: "audit",
@@ -540,186 +542,102 @@ async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
 
 service.start().catch(e => console.error('Service threw uncaught error: ', e));
 
-// let _rulesTree = {
-// 	bookmarks: {
-// 		_type: 'application/vnd.oada.bookmarks.1+json',
-// 		_rev: 0,
-// 		services: {
-// 			'_type': 'application/vnd.oada.services.1+json',
-// 			'_rev': 0,
-// 			'*': {
-// 				_type: 'application/vnd.oada.service.1+json',
-// 				_rev: 0,
-// 				rules: {
-// 					_type: 'application/vnd.oada.rules.1+json',
-// 					_rev: 0,
-// 					actions: {
-// 						'_type': 'application/vnd.oada.rules.actions.1+json',
-// 						'_rev': 0,
-// 						'*': {
-// 							_type: 'application/vnd.oada.rules.action.1+json',
-// 							_rev: 0,
-// 						},
-// 					},
-// 					conditions: {
-// 						'_type': 'application/vnd.oada.rules.conditions.1+json',
-// 						'_rev': 0,
-// 						'*': {
-// 							_type: 'application/vnd.oada.rules.condition.1+json',
-// 							_rev: 0,
-// 						},
-// 					},
-// 					configured: {
-// 						'_type': 'application/vnd.oada.rules.configured.1+json',
-// 						'_rev': 0,
-// 						'*': {
-// 							_type: 'application/vnd.oada.rule.configured.1+json',
-// 							_rev: 0,
-// 						},
-// 					},
-// 					compiled: {
-// 						'_type': 'application/vnd.oada.rules.compiled.1+json',
-// 						'_rev': 0,
-// 						'*': {
-// 							_type: 'application/vnd.oada.rule.compiled.1+json',
-// 							_rev: 0,
-// 						},
-// 					},
-// 				},
-// 			},
-// 		},
-// 	},
-// };
-
-// creating actions structure
-// let _rulesData = {
-// 	"notify-fsqa-emails-livefeed": {
-// 		name: "notify-fsqa-emails-livefeed",
-// 		service: "trellis-notifications",
-// 		type: "application/json",
-// 		description: "send notification to fsqa emails"
-// 	},
-// 	"notify-audit-emails-livefeed": {
-// 		name: "notify-audit-emails-livefeed",
-// 		service: "trellis-notifications",
-// 		type: "application/json",
-// 		description: "send notification to audit emails"
-// 	},
-// 	"notify-coi-emails-livefeed": {
-// 		name: "notify-coi-emails-livefeed",
-// 		service: "trellis-notifications",
-// 		type: "application/json",
-// 		description: "send notification to coi emails"
-// 	},
-// 	"notify-log-emails-livefeed": {
-// 		name: "notify-log-emails-livefeed",
-// 		service: "trellis-notifications",
-// 		type: "application/json",
-// 		description: "send notification to log emails"
-// 	},
-// 	"notify-fsqa-emails-dailyfeed": {
-// 		name: "notify-fsqa-emails-dailyfeed",
-// 		service: "trellis-notifications",
-// 		type: "application/json",
-// 		description: "send daily notification to fsqa emails"
-// 	},
-// 	"notify-audit-emails-dailyfeed": {
-// 		name: "notify-audit-emails-dailyfeed",
-// 		service: "trellis-notifications",
-// 		type: "application/json",
-// 		description: "send daily notification to audit emails"
-// 	},
-// 	"notify-coi-emails-dailyfeed": {
-// 		name: "notify-coi-emails-dailyfeed",
-// 		service: "trellis-notifications",
-// 		type: "application/json",
-// 		description: "send daily notification to coi emails"
-// 	},
-// 	"notify-log-emails-dailyfeed": {
-// 		name: "notify-log-emails-dailyfeed",
-// 		service: "trellis-notifications",
-// 		type: "application/json",
-// 		description: "send daily notification to log emails"
-// 	}
-// };
-
-// let _rulesDataKeys = Object.keys(_rulesData);
+// local connection
 const _conn = service.getClient(DOMAIN).clone(TOKEN);
 OADA = _conn;
 
-// Promise.each(_rulesDataKeys, async _key => {
-// 	trace("creating action for document type and frequency ", _key);
-// 	// Register action in OADA
-// 	const { headers } = await _conn.put({
-// 		path: `/bookmarks/services/trellis-notifications/rules/actions/${_rulesData[_key].name}`,
-// 		tree: _rulesTree,
-// 		data: _rulesData[_key],
-// 	});
-// });
+/**
+ * creates a trellis-notification job when callback is triggered
+ * @param item 
+ * @param options 
+ */
+async function createTNJob(item, options) {
+	let _content = {
+		service: "trellis-notifications",
+		type: `${options.properties.docType.default}-changed`,
+		config: {
+			notificationType: options.properties.notificationType.default,
+			doctype: options.properties.docType.default,
+			chroot: options.properties.chroot.default,
+			userEndpoint: options.properties.userEndpoint.default,
+			emailsEndpoint: options.properties.emailsToNotify.default,
+			user: {
+				id: options.properties.userid.default,
+				name: item
+			}
+		}
+	};
+
+	const _key = await OADA
+		.post({
+			path: "/resources",
+			data: _content
+		})
+		.then(r => r.headers["content-location"].replace(/^\/resources\//, ''))
+		.catch(e => {
+			throw new Error("Failed to create resource, error " + e);
+		});
+
+	// Link into trellis-notifications queue
+	await OADA.put({
+		path: `/bookmarks/services/trellis-notifications/jobs`,
+		data: { [_key]: { _id: `resources/${_key}` } },
+		tree
+	});
+
+}//createTNJob
+
+// Input parameters
+const options = {
+	required: ["notificationType", "docType", "userEndpoint", "emailsToNotify", "chroot", "userid"],
+	properties: {
+		notificationType: {
+			description: "The notification type [email, text, etc.]",
+			default: NotificationType.EMAIL,
+			type: "string"
+		},
+		docType: {
+			description: "The document type",
+			default: DocType.AUDIT,
+			type: "string"
+		},
+		userEndpoint: {
+			description: "The User's endpoint",
+			default: "user/bookmarks/trellisfw",
+			type: "string"
+		},
+		emailsToNotify: {
+			description: "The emails endpoint [retrieves array of emails]",
+			default: "fsqa-emails",
+			type: "string"
+		},
+		chroot: {
+			description: "Working directory endpoint",
+			default: "trading-partners/TEST-TRELLISNOTIFICATIONS-TP",
+			type: "string"
+		},
+		userid: {
+			description: "The user id",
+			default: "USERID",
+			type: "string"
+		}
+	}
+};
 
 /*
 * rules-engine - set of actions related to trellis-notifications
-*
 */
 new RulesWorker({
 	name: "trellis-notifications",
 	conn: service.getClient(DOMAIN).clone(TOKEN),
 	actions: [
 		Action({
-			name: "notify-fsqa-emails-livefeed",
-			service: "trellis-notifications",
-			type: "application/json",
-			description: "send notification to fsqa emails",
-			callback: notifyUser
-		}),
-		Action({
 			name: "notify-audit-emails-livefeed",
 			service: "trellis-notifications",
 			type: "application/json",
-			description: "send a notification to audit emails",
-			callback: notifyUser
-		}),
-		Action({
-			name: "notify-coi-emails-livefeed",
-			service: "trellis-notifications",
-			type: "application/json",
-			description: "send a notification to coi emails",
-			callback: notifyUser
-		}),
-		Action({
-			name: "notify-log-emails-livefeed",
-			service: "trellis-notifications",
-			type: "application/json",
-			description: "send a notification to log emails",
-			callback: notifyUser
-		}),
-		Action({
-			name: "notify-fsqa-emails-dailydigest",
-			service: "trellis-notifications",
-			type: "application/json",
-			description: "send daily notification to fsqa emails",
-			callback: notifyUser
-		}),
-		Action({
-			name: "notify-audit-emails-dailydigest",
-			service: "trellis-notifications",
-			type: "application/json",
-			description: "send a daily notification to audit emails",
-			callback: notifyUser
-		}),
-		Action({
-			name: "notify-coi-emails-dailydigest",
-			service: "trellis-notifications",
-			type: "application/json",
-			description: "send a daily notification to coi emails",
-			callback: notifyUser
-		}),
-		Action({
-			name: "notify-log-emails-dailydigest",
-			service: "trellis-notifications",
-			type: "application/json",
-			description: "send a daily notification to log emails",
-			callback: notifyUser
+			description: "send notification to audit emails",
+			params: options,
+			callback: createTNJob
 		})
 	]
 });
