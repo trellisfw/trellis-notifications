@@ -224,6 +224,9 @@ Promise.each(doctypes, async doctype => {
 	service.on(`${doctype}-changed`, config.get('timeout'), newJob);
 });
 
+// ======================================================================================> rule event triggered
+service.on(`rule-event-triggered`, config.get('timeout'), newRuleGeneratedJob);
+
 async function newJob(job, { jobId, log, oada }) {
 	/*
 	trace('Linking job under src/_meta until oada-jobs can do that natively')
@@ -263,6 +266,18 @@ async function newJob(job, { jobId, log, oada }) {
 		oada, _tnUserEndpoint, _emailsToNotify,
 		_notificationsConfig, _emails, job
 	});
+
+	return _config;
+}//end newJob
+
+// ======================================================================================> new job
+async function newRuleGeneratedJob(job, { jobId, log, oada }) {
+	console.log("--> received job creation for rule-event-triggered");
+	OADA = oada;
+	const c = job.config;
+	let _emailsToNotify = c.emailsToNotify;
+
+	let _config = await ruleNotifyUser(oada, _emailsToNotify, job);
 
 	return _config;
 }//end newJob
@@ -401,6 +416,7 @@ async function getNotificationConfigData(oada, _notificationsConfig) {
  * @param _emails 
  */
 async function createEmailJob(oada, _docType, _to, _emails, _userToken) {
+	console.log("--> createEmailJob #0", _emails);
 	let _subject = getSubject(_docType);
 	let _link = `https://trellisfw.github.io/conductor?d=${DOMAIN}&t=${_userToken}&s=${SKIN}`;
 
@@ -437,6 +453,8 @@ async function createEmailJob(oada, _docType, _to, _emails, _userToken) {
 		data: { [_jobkey]: { _id: `resources/${_jobkey}` } },
 		tree
 	});
+
+	console.log("--> createEmailJob #1 jobkey", _jobkey);
 
 	return _jobkey;
 }//end createEmailJob
@@ -540,6 +558,31 @@ async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
 	return _config;
 }//end notifyUser
 
+/**
+ * notifyUser: notifies user according to rules
+ * @param param0 
+ */
+async function ruleNotifyUser(oada, emails, job) {
+	//trace('--> rule event - notify users ', emails);
+	console.log("--> ruleNotifyUser #0", emails);
+	const _userToken = generateToken();
+	console.log("--> ruleNotifyUser #1", emails);
+	//const _auth = await getAuthorization(oada, job, _userToken);
+	console.log("--> ruleNotifyUser #2", emails);
+	let _to = parseEmails(emails);
+	console.log("--> ruleNotifyUser #3", emails);
+	let _jobkey = await createEmailJob(oada, DocType.AUDIT, _to, emails, _userToken);
+	console.log("--> ruleNotifyUser #4", emails);
+	let _config = {
+		result: "success",
+		emailsToNotify: emails,
+		jobkey: _jobkey
+	};
+
+	return _config;
+}//end ruleNotifyUser
+
+console.log("--> starting trellis-notifications service");
 service.start().catch(e => console.error('Service threw uncaught error: ', e));
 
 // local connection
@@ -552,19 +595,14 @@ OADA = _conn;
  * @param options 
  */
 async function createTNJob(item, options) {
+	//trace('--> creating tn job ');
+	console.log("--> creating tn job");
 	let _content = {
 		service: "trellis-notifications",
-		type: `${options.properties.docType.default}-changed`,
+		type: `rule-event-triggered`,
 		config: {
-			notificationType: options.properties.notificationType.default,
-			doctype: options.properties.docType.default,
-			chroot: options.properties.chroot.default,
-			userEndpoint: options.properties.userEndpoint.default,
-			emailsEndpoint: options.properties.emailsToNotify.default,
-			user: {
-				id: options.properties.userid.default,
-				name: item
-			}
+			docType: DocType.AUDIT,
+			emailsToNotify: "serviopalacios@gmail.com"//take this from options
 		}
 	};
 
@@ -584,12 +622,11 @@ async function createTNJob(item, options) {
 		data: { [_key]: { _id: `resources/${_key}` } },
 		tree
 	});
-
 }//createTNJob
 
 // Input parameters
 const options = {
-	required: ["notificationType", "docType", "userEndpoint", "emailsToNotify", "chroot", "userid"],
+	required: ["notificationType", "docType", "emailsToNotify"],
 	properties: {
 		notificationType: {
 			description: "The notification type [email, text, etc.]",
@@ -601,24 +638,9 @@ const options = {
 			default: DocType.AUDIT,
 			type: "string"
 		},
-		userEndpoint: {
-			description: "The User's endpoint",
-			default: "user/bookmarks/trellisfw",
-			type: "string"
-		},
 		emailsToNotify: {
 			description: "The emails endpoint [retrieves array of emails]",
-			default: "fsqa-emails",
-			type: "string"
-		},
-		chroot: {
-			description: "Working directory endpoint",
-			default: "trading-partners/TEST-TRELLISNOTIFICATIONS-TP",
-			type: "string"
-		},
-		userid: {
-			description: "The user id",
-			default: "USERID",
+			default: "servio@qlever.io",
 			type: "string"
 		}
 	}
@@ -632,13 +654,14 @@ new RulesWorker({
 	conn: service.getClient(DOMAIN).clone(TOKEN),
 	actions: [
 		Action({
-			name: "notify-audit-emails-livefeed",
+			name: "notify-emails-livefeed",
 			service: "trellis-notifications",
 			type: "application/json",
-			description: "send notification to audit emails",
+			description: "send {notificationType} notifications to {emailsToNotify}",
 			params: options,
 			callback: createTNJob
 		})
 	]
 });
 
+createTNJob({}, {});
