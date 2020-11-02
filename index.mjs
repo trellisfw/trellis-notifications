@@ -4,23 +4,26 @@ import debug from "debug";
 import Jobs from "@oada/jobs";
 import tree from "./tree.js";
 import template from "./email_templates/index.js";
-import { v4 as uuidv4 } from "uuid";
-import emailParser from "email-addresses";
 import config from "./config.js";
-import moment from "moment";
 //import Worker from "@trellisfw/rules-worker";
 import Worker from "@oada/rules-worker";
 const { RulesWorker, Action, Condition } = Worker;
 import Cron from "cron";
 const { CronJob } = Cron;
-const DAILY = '00 59 23 * * *';
-const HOURLY = '00 00 * * * *';
-const FIVEMIN = "00 */5 * * * *";
-const DAILY_6PM = '00 00 18 * * *';
+
+// Notifications helper
+import { DocType, Frequency, NotificationType, doctypes } from "./src/notifications.js";
+import { DAILY, HOURLY, FIVEMIN, DAILY_6PM } from "./src/notifications.js";
+import Notifications from "./src/notifications.js";
 
 const { Service } = Jobs;
 const TN = "trellis-notifications";
 let OADA = null;
+Object.freeze(DocType);
+Object.freeze(Frequency);
+let notifications = {};
+let dailyNotifications = {};
+let _CRONCounter = 0;
 
 const error = debug(`${TN}:error`);
 const warn = debug(`${TN}:warn`);
@@ -29,8 +32,7 @@ const trace = debug(`${TN}:trace`);
 
 const TOKEN = config.get('token');
 let DOMAIN = config.get('domain') || '';
-let DAILY_DIGEST_TIME = config.get("dailyDigestTime") || 8;
-const MS_IN_A_DAY = 86400000;
+//let DAILY_DIGEST_TIME = config.get("dailyDigestTime") || 8;
 if (DOMAIN.match(/^http/)) DOMAIN = DOMAIN.replace(/^https:\/\//, '')
 
 if (DOMAIN === 'localhost' || DOMAIN === 'proxy') {
@@ -49,95 +51,36 @@ const service = new Service(TN, DOMAIN, TOKEN, 1, {
 	]
 }); // 1 concurrent job
 
-const NotificationType = {
-	EMAIL: "email"
-};
-
-const DocType = {
-	AUDIT: "audit",
-	COI: "coi",
-	CERT: "cert",
-	LOG: "log",
-	ALL: "all"
-};
-
-Object.freeze(DocType);
-
-const Frequency = {
-	DAILYFEED: "daily-feed",
-	LIVEFEED: "live-feed"
-};
-
-Object.freeze(Frequency);
-
-let notifications = {};
-let dailyNotifications = {};
-
-const doctypes = [DocType.AUDIT, DocType.CERT, DocType.COI, DocType.LOG];
-
-let now = new Date();
-
-let msTill1700 = new Date(now.getFullYear(), now.getMonth(), now.getDate(), DAILY_DIGEST_TIME, 0, 0, 0) - now;
-
-if (msTill1700 < 0) {
-	msTill1700 += MS_IN_A_DAY;
-}
-
-setTimeout(setDailyDigestTimer, msTill1700);
-
-let _CRONCounter = 0;
-
-var job = new CronJob(HOURLY, async function () {
-	let _path = getDailyDigestPath();
+/**
+ * sets up a CRON job for the daily/hourly/etc. notifications
+ */
+//TODO: should trigger this:dailyDigest() when time arrives
+var job = new CronJob(FIVEMIN, async function () {
+	let _path = Notifications.getDailyDigestPath();
 	let _result = {};
-	if (OADA !== null) {
-		_result = {
-			counter: _CRONCounter,
-			processed: true,
-			path: _path
-		};
-		await OADA.put({
-			path: _path,
-			data: _result
-		}).catch(e => {
-			throw new Error("Failed to put resource for hourly digest " + e);
-		});
+	_CRONCounter++;
+	console.log("[Cron] --> triggered new daily job frequency.");
+	try {
+		if (OADA !== null) {
+			_result = {
+				counter: _CRONCounter,
+				processed: true,
+				path: _path
+			};
+			await OADA.put({
+				path: _path + `/m${_CRONCounter}`,
+				data: _result
+			}).catch(e => {
+				throw new Error("Failed to put resource for daily digest " + e);
+			});
+		}
+	}
+	catch (e) {
+		throw new Error("CRON Job failed " + e);
 	}
 }, null, true, 'America/Indiana/Indianapolis');
+
 job.start();
-
-async function setDailyDigestTimer() {
-	try {
-		await dailyDigest();
-		setInterval(dailyDigest, MS_IN_A_DAY);
-	} catch (error) {
-		trace("Error: dailyDigest() ", e);
-	};
-}//end setDailyDigestTimer
-
-/**
- * get Daily Digest Path
- */
-function getDailyDigestPath() {
-	let _date = moment().format('YYYY-MM-DD');
-	let _path = `/bookmarks/services/${TN}/notifications/day-index/${_date}/daily-digest-queue`;
-	return _path;
-}//end getDailyDigestPath
-
-/**
- * get Daily Digest Queue
- * @param oada 
- */
-async function getDailyDigestQueue(oada) {
-	let _path = getDailyDigestPath();
-
-	return oada
-		.get({ path: _path })
-		.then(r => r.data)
-		.catch(e => {
-			throw new Error("Failed to get daily digest queue, error " + e);
-		});
-}//end getDailyDigestQueue
 
 /**
  * Updating daily digest after processing daily digest
@@ -145,7 +88,7 @@ async function getDailyDigestQueue(oada) {
  * @param _content 
  */
 async function updateDailyDigestQueue(oada, _content) {
-	let _path = getDailyDigestPath();
+	let _path = Notifications.getDailyDigestPath();
 
 	return oada.put({
 		path: _path,
@@ -167,11 +110,11 @@ let _counter = 0;
  * Daily Digest Main Function
  */
 async function dailyDigest() {
-	let _path = getDailyDigestPath();
+	let _path = Notifications.getDailyDigestPath();
 	let _result = {};
 	if (OADA !== null) {
 		try {
-			let _dailyDigest = await getDailyDigestQueue(OADA);
+			let _dailyDigest = await Notifications.getDailyDigestQueue(OADA);
 
 			if (_dailyDigest && (!_dailyDigest.hasOwnProperty("processed") || !_dailyDigest.processed)) {
 				let _dailyDigestHT = _dailyDigest["notificationsHT"];
@@ -211,22 +154,19 @@ async function dailyDigest() {
 	}//if
 }//end daily digest
 
-/**
- * Generates a token
- */
-function generateToken() {
-	return uuidv4().replace(/-/g, '');
-}//end generateToken
-
-// 5 min timeout
+// ======================================================================================
+// creates type of services served
+// ======================================================================================
 Promise.each(doctypes, async doctype => {
 	trace("creating jobs for document type ", doctype);
 	service.on(`${doctype}-changed`, config.get('timeout'), newJob);
 });
 
-// ======================================================================================> rule event triggered
-service.on(`rule-event-triggered`, config.get('timeout'), newRuleGeneratedJob);
-
+/**
+ * newJob handler
+ * @param job 
+ * @param param1 
+ */
 async function newJob(job, { jobId, log, oada }) {
 	/*
 	trace('Linking job under src/_meta until oada-jobs can do that natively')
@@ -270,7 +210,16 @@ async function newJob(job, { jobId, log, oada }) {
 	return _config;
 }//end newJob
 
-// ======================================================================================> new job
+// ==================================================================================
+// > rule event triggered
+// ==================================================================================
+service.on(`rule-event-triggered`, config.get('timeout'), newRuleGeneratedJob);
+
+/**
+ * newRuleGeneratedJob handler
+ * @param job 
+ * @param param1 
+ */
 async function newRuleGeneratedJob(job, { jobId, log, oada }) {
 	console.log("--> received job creation for rule-event-triggered");
 	OADA = oada;
@@ -284,7 +233,7 @@ async function newRuleGeneratedJob(job, { jobId, log, oada }) {
 
 /**
  * Inserts into the daily digest endpoint in the notifications service
- * keeps track of the notifications that are need to send at the end of the day
+ * keeps track of the notifications that are needed to send at the end of the day
  * @param notifications --> object with configuration for notifications
  */
 async function insertDailyDigestQueue(oada, notifications, _userToken) {
@@ -320,7 +269,7 @@ async function insertDailyDigestQueue(oada, notifications, _userToken) {
 		}//if
 	}//for
 
-	let _path = getDailyDigestPath();
+	let _path = Notifications.getDailyDigestPath();
 	let _notificationsHT = {
 		notificationsHT: _result
 	};
@@ -332,36 +281,6 @@ async function insertDailyDigestQueue(oada, notifications, _userToken) {
 
 	return _result;
 }//end insertDailyDigestQueue
-
-/**
- * Generates the subject to be sent by the notification service
- * @param docType -> type of document
- */
-function getSubject(docType) {
-	let _subject = "New FSQA audit available";
-
-	switch (docType) {
-		case DocType.CERT:
-			_subject = "New FSQA certificate available";
-			break;
-		case DocType.COI:
-			_subject = "New certificate of insurance available";
-			break;
-		case DocType.LOG:
-			_subject = "New letter of guarantee available";
-			break;
-		case DocType.AUDIT:
-			_subject = "New FSQA audit available";
-			break;
-		case DocType.ALL:
-			_subject = "Daily digest - new documents available";
-			break;
-		default:
-			throw new Error("Document type not recognized");
-	}//switch
-
-	return _subject;
-}//end getSubject
 
 /**
  * Gets temporal authorization
@@ -417,8 +336,9 @@ async function getNotificationConfigData(oada, _notificationsConfig) {
  */
 async function createEmailJob(oada, _docType, _to, _emails, _userToken) {
 	console.log("--> createEmailJob #0", _emails);
-	let _subject = getSubject(_docType);
-	let _link = `https://trellisfw.github.io/conductor?d=${DOMAIN}&t=${_userToken}&s=${SKIN}`;
+	let _subject = Notifications.getSubject(_docType);
+	//TODO: I need to update the _userToken, left a generic one for demo purposes
+	let _link = `https://trellisfw.github.io/conductor?d=${DOMAIN}&t=${TOKEN}&s=${SKIN}`;
 
 	let _resourceData = {
 		service: "abalonemail",
@@ -490,18 +410,6 @@ function populateNotifications(_to, _notificationsConfigData, _docType) {
 }//end populateNotifications
 
 /**
- * Parses the emails to notify
- * @param _emails 
- */
-function parseEmails(_emails) {
-	return emailParser.parseAddressList(_emails).map(({ name, address }) =>
-		({
-			name: name || undefined,
-			email: address
-		}));
-}//end parseEmails
-
-/**
  * Gets the LIVEFEED Emails from notifications
  */
 function getLiveFeedEmails() {
@@ -536,7 +444,7 @@ async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
 	const _userToken = generateToken();
 	const _auth = await getAuthorization(oada, job, _userToken);
 	const _notificationsConfigData = await getNotificationConfigData(oada, _notificationsConfig);
-	let _to = parseEmails(_emails);
+	let _to = Notifications.parseEmails(_emails);
 	populateNotifications(_to, _notificationsConfigData, _docType);
 	let _list = await insertDailyDigestQueue(oada, notifications, _userToken);
 	let _liveFeedEmails = getLiveFeedEmails();
@@ -563,16 +471,17 @@ async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
  * @param param0 
  */
 async function ruleNotifyUser(oada, emails, job) {
-	//trace('--> rule event - notify users ', emails);
 	console.log("--> ruleNotifyUser #0", emails);
 	const _userToken = generateToken();
-	console.log("--> ruleNotifyUser #1", emails);
 	//const _auth = await getAuthorization(oada, job, _userToken);
-	console.log("--> ruleNotifyUser #2", emails);
-	let _to = parseEmails(emails);
-	console.log("--> ruleNotifyUser #3", emails);
-	let _jobkey = await createEmailJob(oada, DocType.AUDIT, _to, emails, _userToken);
-	console.log("--> ruleNotifyUser #4", emails);
+	let _to = "";
+	if (Array.isArray(emails)) {
+		_to = emails.join();
+	} else {
+		_to = Notifications.parseEmails(emails);
+	}
+	console.log("--> ruleNotifyUser #3 to: ", _to);
+	let _jobkey = await createEmailJob(oada, DocType.AUDIT, _to, _to, _userToken);//second _to was emails
 	let _config = {
 		result: "success",
 		emailsToNotify: emails,
@@ -582,6 +491,9 @@ async function ruleNotifyUser(oada, emails, job) {
 	return _config;
 }//end ruleNotifyUser
 
+// ============================================================================
+// starting trellis-notification service
+// ============================================================================
 console.log("--> starting trellis-notifications service");
 service.start().catch(e => console.error('Service threw uncaught error: ', e));
 
@@ -591,20 +503,26 @@ OADA = _conn;
 
 /**
  * creates a trellis-notification job when callback is triggered
+ * callback utilized in the rules-engine configuration
  * @param item 
  * @param options 
  */
 async function createTNJob(item, options) {
-	//trace('--> creating tn job ');
-	console.log("--> creating tn job");
+	console.log("--> creating tn job - callback for the rules-engine");
+	console.log("--> item ", item);
+	console.log("--> options", options);
+	//let _emails = options.emailsToNotify ? options.emailsToNotify : "trellis-testing@centricity.us";
 	let _content = {
 		service: "trellis-notifications",
 		type: `rule-event-triggered`,
 		config: {
 			docType: DocType.AUDIT,
-			emailsToNotify: "serviopalacios@gmail.com"//take this from options
+			emailsToNotify: "trellis-testing@centricity.us"
 		}
 	};
+
+	//emailsToNotify: ["servio@qlever.io", "serviopalacios@gmail.com"]//take this from options
+	//emailsToNotify: "trellis-testing@centricity.us"
 
 	const _key = await OADA
 		.post({
@@ -623,6 +541,11 @@ async function createTNJob(item, options) {
 		tree
 	});
 }//createTNJob
+
+/** ============================================================================
+ *  rules-engine configuration
+ *  ============================================================================ 
+*/
 
 // Input parameters
 const options = {
@@ -663,5 +586,3 @@ new RulesWorker({
 		})
 	]
 });
-
-createTNJob({}, {});
