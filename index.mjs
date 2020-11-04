@@ -5,15 +5,15 @@ import Jobs from "@oada/jobs";
 import tree from "./tree.js";
 import template from "./email_templates/index.js";
 import config from "./config.js";
-//import Worker from "@trellisfw/rules-worker";
-import Worker from "@oada/rules-worker";
+import Worker from "@trellisfw/rules-worker";
+//import Worker from "@oada/rules-worker";
 const { RulesWorker, Action, Condition } = Worker;
 import Cron from "cron";
 const { CronJob } = Cron;
 
 // Notifications helper
-import { DocType, Frequency, NotificationType, doctypes } from "./src/notifications.js";
-import { DAILY, HOURLY, FIVEMIN, DAILY_6PM } from "./src/notifications.js";
+import { DocType, Frequency, NotificationType, doctypes, rulesEngineOptions } from "./src/notifications.js";
+import { DAILY, HOURLY, FIVEMIN, DAILY_4PM } from "./src/notifications.js";
 import Notifications from "./src/notifications.js";
 
 const { Service } = Jobs;
@@ -25,8 +25,6 @@ let notifications = {};
 let dailyNotifications = {};
 let _CRONCounter = 0;
 
-const error = debug(`${TN}:error`);
-const warn = debug(`${TN}:warn`);
 const info = debug(`${TN}:info`);
 const trace = debug(`${TN}:trace`);
 
@@ -55,7 +53,7 @@ const service = new Service(TN, DOMAIN, TOKEN, 1, {
  * sets up a CRON job for the daily/hourly/etc. notifications
  */
 //TODO: should trigger this:dailyDigest() when time arrives
-var job = new CronJob(FIVEMIN, async function () {
+var cronJob = new CronJob(DAILY_4PM, async function () {
 	let _path = Notifications.getDailyDigestPath();
 	let _result = {};
 	_CRONCounter++;
@@ -68,7 +66,7 @@ var job = new CronJob(FIVEMIN, async function () {
 				path: _path
 			};
 			await OADA.put({
-				path: _path + `/m${_CRONCounter}`,
+				path: _path + `/ds${_CRONCounter}`,
 				data: _result
 			}).catch(e => {
 				throw new Error("Failed to put resource for daily digest " + e);
@@ -80,23 +78,7 @@ var job = new CronJob(FIVEMIN, async function () {
 	}
 }, null, true, 'America/Indiana/Indianapolis');
 
-job.start();
-
-/**
- * Updating daily digest after processing daily digest
- * @param oada 
- * @param _content 
- */
-async function updateDailyDigestQueue(oada, _content) {
-	let _path = Notifications.getDailyDigestPath();
-
-	return oada.put({
-		path: _path,
-		data: _content
-	}).catch(e => {
-		throw new Error("--> updateDailyDigest(): Failed to update daily digest " + e);
-	});
-}//end updateDailyDigestQueue
+cronJob.start();
 
 /**
  * Flushing daily notifications hash table after processing the queue
@@ -202,9 +184,9 @@ async function newJob(job, { jobId, log, oada }) {
 		});
 
 	//notify according to rules/config
-	let _config = await notifyUser({
+	let _config = await Notifications.notifyUser({
 		oada, _tnUserEndpoint, _emailsToNotify,
-		_notificationsConfig, _emails, job
+		_notificationsConfig, _emails, job, notifications
 	});
 
 	return _config;
@@ -223,11 +205,8 @@ service.on(`rule-event-triggered`, config.get('timeout'), newRuleGeneratedJob);
 async function newRuleGeneratedJob(job, { jobId, log, oada }) {
 	console.log("--> received job creation for rule-event-triggered");
 	OADA = oada;
-	const c = job.config;
-	let _emailsToNotify = c.emailsToNotify;
-
+	let _emailsToNotify = job.config.emailsToNotify || "";
 	let _config = await ruleNotifyUser(oada, _emailsToNotify, job);
-
 	return _config;
 }//end newJob
 
@@ -380,99 +359,12 @@ async function createEmailJob(oada, _docType, _to, _emails, _userToken) {
 }//end createEmailJob
 
 /**
- * Populates the values for all notifications in the config
- * @param _to 
- * @param _notificationsConfigData 
- */
-function populateNotifications(_to, _notificationsConfigData, _docType) {
-	let _emailsConfig = _notificationsConfigData["notifications-config"];
-	let _configTemplate = {
-		id: "",
-		type: "email",
-		frequency: "",
-		docType: _docType
-	};
-
-	if (_to) {
-		_to.forEach(function (item) {
-			let _template = _.cloneDeep(_configTemplate);
-			_template.id = item.email;
-			if (_emailsConfig[item.email] && _emailsConfig[item.email].frequency) {
-				_template.frequency = _emailsConfig[item.email].frequency;
-			} else {
-				_template.frequency = Frequency.LIVEFEED;
-			}
-			notifications[item.email] = {};
-			notifications[item.email].config = {};
-			notifications[item.email].config = _template;
-		});
-	}
-}//end populateNotifications
-
-/**
- * Gets the LIVEFEED Emails from notifications
- */
-function getLiveFeedEmails() {
-	let _entries = Object.entries(notifications);
-	let _counter = 0;
-	let _result = "";
-	let _emails = "";
-
-	for (const [email, notification] of _entries) {
-		if (notification.config.frequency === Frequency.LIVEFEED) {
-			_result += email + ",";
-			_counter++;
-		}//if
-	}//for
-
-	if (_counter > 0) {
-		_emails = _result.substring(0, _result.length - 1);
-	}
-
-	return _emails;
-}//end getLiveFeedEmails
-
-/**
- * notifyUser: notifies user according to rules
- * @param param0 
- */
-async function notifyUser({ oada, _tnUserEndpoint, _emailsToNotify,
-	_notificationsConfig, _emails, job }) {
-	trace('--> notify User ', job.config.doctype);
-	let _tradingPartnerId = job.config.chroot.replace(/^.*trading-partners\/([^\/]+)(\/.*)$/, '$1');
-	const _docType = job.config.doctype;
-	const _userToken = generateToken();
-	const _auth = await getAuthorization(oada, job, _userToken);
-	const _notificationsConfigData = await getNotificationConfigData(oada, _notificationsConfig);
-	let _to = Notifications.parseEmails(_emails);
-	populateNotifications(_to, _notificationsConfigData, _docType);
-	let _list = await insertDailyDigestQueue(oada, notifications, _userToken);
-	let _liveFeedEmails = getLiveFeedEmails();
-	let _jobkey = await createEmailJob(oada, _docType, _liveFeedEmails, _emails, _userToken);
-
-	let _config = {
-		result: "success",
-		destinationPath: _tnUserEndpoint,
-		tnUserEndpoint: _tnUserEndpoint,
-		emailsToNotify: _emailsToNotify,
-		emails: _emails,
-		liveFeeEmails: _liveFeedEmails,
-		tradingPartnerId: _tradingPartnerId,
-		jobkey: _jobkey,
-		notifications: notifications,
-		dailyDigest: _list
-	};
-
-	return _config;
-}//end notifyUser
-
-/**
- * notifyUser: notifies user according to rules
+ * ruleNotifyUser: notifies user according to rules
  * @param param0 
  */
 async function ruleNotifyUser(oada, emails, job) {
 	console.log("--> ruleNotifyUser #0", emails);
-	const _userToken = generateToken();
+	const _userToken = Notifications.generateToken();
 	//const _auth = await getAuthorization(oada, job, _userToken);
 	let _to = "";
 	if (Array.isArray(emails)) {
@@ -521,9 +413,6 @@ async function createTNJob(item, options) {
 		}
 	};
 
-	//emailsToNotify: ["servio@qlever.io", "serviopalacios@gmail.com"]//take this from options
-	//emailsToNotify: "trellis-testing@centricity.us"
-
 	const _key = await OADA
 		.post({
 			path: "/resources",
@@ -544,33 +433,8 @@ async function createTNJob(item, options) {
 
 /** ============================================================================
  *  rules-engine configuration
+ *  rules-engine - set of actions related to trellis-notifications
  *  ============================================================================ 
-*/
-
-// Input parameters
-const options = {
-	required: ["notificationType", "docType", "emailsToNotify"],
-	properties: {
-		notificationType: {
-			description: "The notification type [email, text, etc.]",
-			default: NotificationType.EMAIL,
-			type: "string"
-		},
-		docType: {
-			description: "The document type",
-			default: DocType.AUDIT,
-			type: "string"
-		},
-		emailsToNotify: {
-			description: "The emails endpoint [retrieves array of emails]",
-			default: "servio@qlever.io",
-			type: "string"
-		}
-	}
-};
-
-/*
-* rules-engine - set of actions related to trellis-notifications
 */
 new RulesWorker({
 	name: "trellis-notifications",
@@ -581,7 +445,7 @@ new RulesWorker({
 			service: "trellis-notifications",
 			type: "application/json",
 			description: "send {notificationType} notifications to {emailsToNotify}",
-			params: options,
+			params: rulesEngineOptions,
 			callback: createTNJob
 		})
 	]
