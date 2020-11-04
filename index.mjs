@@ -6,7 +6,6 @@ import tree from "./tree.js";
 import template from "./email_templates/index.js";
 import config from "./config.js";
 import Worker from "@trellisfw/rules-worker";
-//import Worker from "@oada/rules-worker";
 const { RulesWorker, Action, Condition } = Worker;
 import Cron from "cron";
 const { CronJob } = Cron;
