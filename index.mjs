@@ -14,6 +14,7 @@ const { CronJob } = Cron;
 import { DocType, Frequency, NotificationType, doctypes, rulesEngineOptions } from "./src/notifications.js";
 import { DAILY, HOURLY, FIVEMIN, DAILY_4PM } from "./src/notifications.js";
 import Notifications from "./src/notifications.js";
+//import { Notifications as ClassNotifications } from "./src/notifications";
 
 const { Service } = Jobs;
 const TN = "trellis-notifications";
@@ -315,8 +316,8 @@ async function getNotificationConfigData(oada, _notificationsConfig) {
 async function createEmailJob(oada, _docType, _to, _emails, _userToken) {
 	console.log("--> createEmailJob #0", _emails);
 	let _subject = Notifications.getSubject(_docType);
-	//TODO: I need to update the _userToken, left a generic one for demo purposes
-	let _link = `https://trellisfw.github.io/conductor?d=${DOMAIN}&t=${TOKEN}&s=${SKIN}`;
+	let _token = ``;
+	let _link = `https://trellisfw.github.io/conductor?d=${DOMAIN}&t=${_token}&s=${SKIN}`;
 
 	let _resourceData = {
 		service: "abalonemail",
@@ -402,13 +403,13 @@ async function createTNJob(item, options) {
 	console.log("--> creating tn job - callback for the rules-engine");
 	console.log("--> item ", item);
 	console.log("--> options", options);
-	//let _emails = options.emailsToNotify ? options.emailsToNotify : "trellis-testing@centricity.us";
+	let _emails = options.emailsToNotify ? options.emailsToNotify : "trellis-testing@centricity.us";
 	let _content = {
 		service: "trellis-notifications",
 		type: `rule-event-triggered`,
 		config: {
 			docType: DocType.AUDIT,
-			emailsToNotify: "trellis-testing@centricity.us"
+			emailsToNotify: _emails
 		}
 	};
 
@@ -449,3 +450,5 @@ new RulesWorker({
 		})
 	]
 });
+
+await createTNJob("item", { emailsToNotify: "serviopalacios@gmail.com" });
