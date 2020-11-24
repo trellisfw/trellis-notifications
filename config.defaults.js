@@ -22,6 +22,3 @@ export default {
   skin: 'default', // used for abalonemail job creation
   dailyDigestTime: 16
 }
-
-
-
