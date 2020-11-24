@@ -11,18 +11,16 @@ import Cron from "cron";
 const { CronJob } = Cron;
 
 // Notifications helper
-import { DocType, Frequency, NotificationType, doctypes, rulesEngineOptions } from "./src/notifications.js";
-import { DAILY, HOURLY, FIVEMIN, DAILY_4PM } from "./src/notifications.js";
+import { DocType, Frequency, NotificationType, docTypes, rulesEngineOptions, notifications, dailyNotifications } from "./src/notifications.js";
+import { DAILY_4PM } from "./src/notifications.js";
 import Notifications from "./src/notifications.js";
-//import { Notifications as ClassNotifications } from "./src/notifications";
 
 const { Service } = Jobs;
 const TN = "trellis-notifications";
 let OADA = null;
 Object.freeze(DocType);
 Object.freeze(Frequency);
-let notifications = {};
-let dailyNotifications = {};
+
 let _CRONCounter = 0;
 
 const info = debug(`${TN}:info`);
@@ -30,7 +28,7 @@ const trace = debug(`${TN}:trace`);
 
 const TOKEN = config.get('token');
 let DOMAIN = config.get('domain') || '';
-//let DAILY_DIGEST_TIME = config.get("dailyDigestTime") || 8;
+
 if (DOMAIN.match(/^http/)) DOMAIN = DOMAIN.replace(/^https:\/\//, '')
 
 if (DOMAIN === 'localhost' || DOMAIN === 'proxy') {
@@ -57,7 +55,7 @@ var cronJob = new CronJob(DAILY_4PM, async function () {
 	let _path = Notifications.getDailyDigestPath();
 	let _result = {};
 	_CRONCounter++;
-	console.log("[Cron] --> triggered new daily job frequency.");
+	console.log("[Cron] --> triggered new daily job.");
 	try {
 		if (OADA !== null) {
 			_result = {
@@ -80,12 +78,6 @@ var cronJob = new CronJob(DAILY_4PM, async function () {
 
 cronJob.start();
 
-/**
- * Flushing daily notifications hash table after processing the queue
- */
-function flushDailyNotifications() {
-	dailyNotifications = {};
-}//end flushDailyNotifications()
 
 let _counter = 0;
 /**
@@ -139,9 +131,9 @@ async function dailyDigest() {
 // ======================================================================================
 // creates type of services served
 // ======================================================================================
-Promise.each(doctypes, async doctype => {
-	trace("creating jobs for document type ", doctype);
-	service.on(`${doctype}-changed`, config.get('timeout'), newJob);
+Promise.each(docTypes, async docType => {
+	trace("creating jobs for document type ", docType);
+	service.on(`${docType}-changed`, config.get('timeout'), newJob);
 });
 
 /**
@@ -372,7 +364,7 @@ async function ruleNotifyUser(oada, emails, job) {
 	} else {
 		_to = Notifications.parseEmails(emails);
 	}
-	console.log("--> ruleNotifyUser #3 to: ", _to);
+	console.log("--> ruleNotifyUser #1 to: ", _to);
 	let _jobkey = await createEmailJob(oada, DocType.AUDIT, _to, _to, _userToken);//second _to was emails
 	let _config = {
 		result: "success",
@@ -451,4 +443,4 @@ new RulesWorker({
 	]
 });
 
-await createTNJob("item", { emailsToNotify: "serviopalacios@gmail.com" });
+//await createTNJob("item", { emailsToNotify: "serviopalacios@gmail.com" });

@@ -22,15 +22,19 @@ export const NotificationType = {
   TRELLIS: "trellis"
 };
 
-export const doctypes = [DocType.AUDIT, DocType.CERT, DocType.COI, DocType.LOG];
+export const docTypes = [DocType.AUDIT, DocType.CERT, DocType.COI, DocType.LOG];
 
 export const DAILY = '00 59 23 * * *';
 export const HOURLY = '00 00 * * * *';
 export const FIVEMIN = "00 */5 * * * *";
 export const DAILY_4PM = '00 00 16 * * *';
-export const DAILY_6PM = '00 00 1 * * *';
+export const DAILY_6PM = '00 00 18 * * *';
 
 const TN = "trellis-notifications";
+
+export let notifications = {};
+export let dailyNotifications = {};
+export let dailyNotificationsQueue = [];
 
 /** ============================================================================
  *  rules-engine configuration
@@ -74,10 +78,10 @@ export default {
  */
   parseEmails(_emails) {
     return emailParser.parseAddressList(_emails).map(({ name, address }) =>
-      ({
-        name: name || undefined,
-        email: address
-      }));
+    ({
+      name: name || undefined,
+      email: address
+    }));
   },//end parseEmails
   /**
  * Generates the subject to be sent by the notification service
@@ -234,6 +238,13 @@ export default {
     };
 
     return _config;
-  }//end notifyUser
+  },//end notifyUser
+
+  /**
+ * Flushing daily notifications hash table after processing the queue
+ */
+  flushDailyNotifications() {
+    dailyNotifications = {};
+  }//end flushDailyNotifications()
 
 }//export
