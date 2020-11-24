@@ -22,7 +22,7 @@ POST /bookmarks/services/trellis-notifications/jobs
             "id": "USERID"
         }
     },
-    src: { _id: "resources/123abc" }
+    "src": { "_id": "resources/123abc" }
 }
 ```
 

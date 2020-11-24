@@ -283,8 +283,8 @@ async function cleanupAbalonEmailJobs() {
  */
 async function cleanupTrellinsNotificationsDailyDigestQueue() {
   //let _end = moment().format('YYYY-MM-DD');
-  let _end = moment("2020-09-19");
-  let _begin = moment("2020-09-17");
+  let _end = moment("2020-09-30");
+  let _begin = moment("2020-09-19");
 
   for (let m = moment(_begin); m.diff(_end, 'days') <= 0; m.add(1, 'days')) {
     let _date = m.format("YYYY-MM-DD");
@@ -564,13 +564,13 @@ describe('success job', () => {
 
     });
   });//each
-  describe("#rules", () => {
-    let _path = "/bookmarks/services/trellis-notifications/rules";
-    it(`It should include a rules endpoint`, async () => {
-      const result = await con.get({ path: _path }).then(r => r.data);
-      expect(result).to.have.property("actions");
-      expect(result).to.have.property("compiled");
-    });
-  });
+  //   describe("#rules", () => {
+  //     let _path = "/bookmarks/services/trellis-notifications/rules";
+  //     it(`It should include a rules endpoint`, async () => {
+  //       const result = await con.get({ path: _path }).then(r => r.data);
+  //       expect(result).to.have.property("actions");
+  //       expect(result).to.have.property("compiled");
+  //     });
+  //   });
 });
 
