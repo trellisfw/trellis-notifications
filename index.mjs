@@ -12,7 +12,7 @@ const { CronJob } = Cron;
 
 // Notifications helper
 import { DocType, Frequency, NotificationType, docTypes, rulesEngineOptions, notifications, dailyNotifications } from "./src/notifications.js";
-import { DAILY_4PM } from "./src/notifications.js";
+import { DAILY_4PM, userConfig } from "./src/notifications.js";
 import Notifications from "./src/notifications.js";
 
 const { Service } = Jobs;
@@ -52,23 +52,10 @@ const service = new Service(TN, DOMAIN, TOKEN, 1, {
  */
 //TODO: should trigger this:dailyDigest() when time arrives
 var cronJob = new CronJob(DAILY_4PM, async function () {
-	let _path = Notifications.getDailyDigestPath();
-	let _result = {};
-	_CRONCounter++;
 	console.log("[Cron] --> triggered new daily job.");
 	try {
 		if (OADA !== null) {
-			_result = {
-				counter: _CRONCounter,
-				processed: true,
-				path: _path
-			};
-			await OADA.put({
-				path: _path + `/ds${_CRONCounter}`,
-				data: _result
-			}).catch(e => {
-				throw new Error("Failed to put resource for daily digest " + e);
-			});
+			dailyDigest();
 		}
 	}
 	catch (e) {
@@ -78,52 +65,44 @@ var cronJob = new CronJob(DAILY_4PM, async function () {
 
 cronJob.start();
 
-
-let _counter = 0;
 /**
  * Daily Digest Main Function
  */
 async function dailyDigest() {
-	let _path = Notifications.getDailyDigestPath();
-	let _result = {};
 	if (OADA !== null) {
 		try {
-			let _dailyDigest = await Notifications.getDailyDigestQueue(OADA);
+			let _dailyDigest = await Notifications.getDailyDigest(OADA);
+			console.log("--> getting dailyDigest() ", _dailyDigest);
+			let _dailyDigestQueue = null;
+			if (_dailyDigest) {
+				_dailyDigestQueue = _dailyDigest["daily-digest-queue"];
+			}
 
 			if (_dailyDigest && (!_dailyDigest.hasOwnProperty("processed") || !_dailyDigest.processed)) {
-				let _dailyDigestHT = _dailyDigest["notificationsHT"];
 
-				for (let _email of Object.keys(_dailyDigestHT)) {
+				for (let _email of Object.keys(_dailyDigestQueue)) {
 					let _userToken = "";
 					let _docType = "";
-					if (_dailyDigestHT[_email].notifications.length >= 2) {
+					if (_dailyDigestQueue[_email].length >= 2) {
 						_docType = DocType.ALL;
 					} else {
-						_docType = _dailyDigestHT[_email].notifications[0].docType;
+						_docType = _dailyDigestQueue[_email][0].docType;
 					}//if
 
-					for (let _notification in _dailyDigestHT[_email].notifications) {
-						_userToken = _dailyDigestHT[_email].notifications[0].userToken;
-					} //for #2
-					await createEmailJob(OADA, _docType, _email, _email, _userToken);
+					//for (let _notification in _dailyDigestQueue[_email]) {
+					_userToken = _dailyDigestQueue[_email][0].userToken;
+					//} //for #2
+					//await createEmailJob(OADA, _docType, _email, _email, _userToken);
 				}//for
 
-				_result = {
-					counter: _counter++,
-					processed: true,
-					path: _path
-				};
-				await OADA.put({
-					path: _path,
-					data: _result
-				}).catch(e => {
-					throw new Error("Failed to put resource for daily digest " + e);
-				});
+				await Notifications.markDailyDigestAsCompleted(OADA);
 
-				flushDailyNotifications();
-			}//if
+				Notifications.flushDailyNotifications();
+			} else if (!_dailyDigest) {//if dailyDigest queue does not exist for this day, create one
+				await Notifications.createDailyDigest(OADA, _content);
+			}
 		} catch (error) {
-			throw new Error("--> dailyDigest(): Error when getting the daily digest queue");
+			throw new Error("--> dailyDigest(): Error when getting the daily digest queue", error);
 		};
 	}//if
 }//end daily digest
@@ -212,7 +191,7 @@ async function insertDailyDigestQueue(oada, notifications, _userToken) {
 	let _result = {};
 
 	for (const [email, notification] of _entries) {
-		if (notification.config.frequency === Frequency.DAILYFEED) {
+		if (notification.config.frequency === Frequency.DAILY_FEED) {
 			let _userNotifications = [];
 			if (dailyNotifications[email]) {
 				//copying previous array of notifications
@@ -365,7 +344,7 @@ async function ruleNotifyUser(oada, emails, job) {
 		_to = Notifications.parseEmails(emails);
 	}
 	console.log("--> ruleNotifyUser #1 to: ", _to);
-	let _jobkey = await createEmailJob(oada, DocType.AUDIT, _to, _to, _userToken);//second _to was emails
+	let _jobkey = await createEmailJob(oada, DocType.AUDIT, _to, emails, _userToken);
 	let _config = {
 		result: "success",
 		emailsToNotify: emails,
@@ -442,5 +421,3 @@ new RulesWorker({
 		})
 	]
 });
-
-//await createTNJob("item", { emailsToNotify: "serviopalacios@gmail.com" });
